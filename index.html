@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urolaser — Portal de Fluxo de Caixa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--teal:#0E4D5C;--teal2:#15707E;--green:#2E7D32;--red:#C62828;--blue:#1565C0;
+        --gtx:#1B5E20;--rtx:#B71C1C;--btx:#0D47A1;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
+  header.top{background:var(--teal);color:#fff;padding:16px 0}
+  header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{font-size:22px;font-weight:bold;letter-spacing:.5px}
+  .brand small{display:block;font-size:11px;font-weight:normal;color:#cfe6ea;letter-spacing:0}
+  .btn{background:#fff;color:var(--teal);border:none;border-radius:8px;padding:9px 14px;font-weight:bold;cursor:pointer;font-size:13px}
+  .btn.ghost{background:transparent;color:#fff;border:1px solid #ffffff66}
+  .btn:active{transform:translateY(1px)}
+  /* login */
+  #login{position:fixed;inset:0;background:linear-gradient(160deg,#0E4D5C,#103a45);display:flex;align-items:center;justify-content:center;z-index:50}
+  #login .box{background:#fff;border-radius:16px;padding:30px;width:330px;text-align:center;box-shadow:0 20px 60px #0006}
+  #login h1{color:var(--teal);font-size:22px;margin-bottom:4px}
+  #login p{color:var(--muted);font-size:12px;margin-bottom:18px}
+  #login input{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:10px;text-align:center}
+  #login button{width:100%;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:11px;font-weight:bold;cursor:pointer}
+  #login .err{color:var(--red);font-size:12px;height:16px;margin-top:6px}
+  #login .hint{color:#90a0aa;font-size:11px;margin-top:14px}
+  /* upload */
+  .drop{background:var(--card);border:2px dashed #b9ccd2;border-radius:14px;padding:26px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s;margin-bottom:18px}
+  .drop.hover{border-color:var(--teal);background:#eef6f7;color:var(--teal)}
+  .drop b{color:var(--teal)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--card);border-radius:12px;padding:14px 16px;border:1px solid var(--line)}
+  .kpi .lab{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .kpi .val{font-size:20px;font-weight:bold;margin-top:4px}
+  .kpi.green .val{color:var(--gtx)} .kpi.red .val{color:var(--rtx)} .kpi.blue .val{color:var(--btx)} .kpi.teal .val{color:var(--teal)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;overflow:hidden}
+  .panel h2{background:var(--teal);color:#fff;font-size:13px;padding:10px 14px;font-weight:bold}
+  .panel .body{padding:6px 0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 12px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{background:#f0f4f5;color:var(--teal);font-size:11px;text-transform:uppercase;letter-spacing:.3px;position:sticky;top:0}
+  tbody tr:nth-child(even){background:#fafcfc}
+  .scroll{overflow-x:auto}
+  tr.tot td{font-weight:bold;border-top:2px solid var(--line)}
+  .pos{color:var(--gtx)} .neg{color:var(--rtx)}
+  .chartwrap{padding:14px;height:280px}
+  .flag{display:flex;justify-content:space-between;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);font-size:12.5px}
+  .flag:last-child{border:none}
+  .flag .t{color:var(--muted)}
+  .badge{display:inline-block;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:20px}
+  .badge.ok{background:#e7f6e9;color:var(--gtx)} .badge.bad{background:#fdecea;color:var(--rtx)}
+  .empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:14px}
+  .note{font-size:11px;color:#90a0aa;text-align:center;margin:8px 0 30px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h1>Urolaser</h1>
+    <p>Portal de Fluxo de Caixa — acesso dos sócios</p>
+    <input id="email" type="email" placeholder="seu e-mail" autocomplete="username">
+    <input id="pw" type="password" placeholder="sua senha" autocomplete="current-password">
+    <button onclick="tryLogin()">Entrar</button>
+    <div class="err" id="loginErr"></div>
+    <div class="hint">Acesso individual por sócio. Esqueceu a senha? Fale com o Dr. Marcel.</div>
+  </div>
+</div>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">UROLASER <small>Portal de Fluxo de Caixa</small></div>
+    <div>
+      <span id="userbar" style="color:#cfe6ea;font-size:12px;margin-right:8px"></span>
+      <button class="btn ghost" onclick="exportCSV()">Exportar CSV</button>
+      <button class="btn ghost" onclick="logout()">Sair</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="drop" id="drop">
+    <div>📄 <b>Arraste o PDF do extrato Sicoob aqui</b> ou clique para selecionar</div>
+    <div style="font-size:12px;margin-top:6px">Vários meses podem ser enviados de uma vez. O processamento é feito no seu navegador.</div>
+    <input type="file" id="file" accept="application/pdf" multiple hidden>
+  </div>
+
+  <div id="dash"></div>
+  <div class="note">Os dados ficam salvos online (Supabase) e são compartilhados entre os sócios. Quem sobe o extrato atualiza para todos.</div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const PARTNERS=['André','Anselmo','Marcel','Marco Túlio','Rodrigo'];
+const SOCIOS_CNPJ={'64.486.983':'Marcel','64486983':'Marcel','64.759.868':'Anselmo','64759868':'Anselmo','64.849.303':'André','64849303':'André'};
+const SOCIOS_CPF={'107.391':'Rodrigo','316.641':'Marco Túlio'};
+const SOCIOS_NOME={'MARCEL CABRAL COGNETTE':'Marcel','ANSELMO DE PAULA ORLANDO':'Anselmo','ANDRE LUIZ MENDES NOGUEIRA':'André','MARCO TULIO ALVES CRUVINEL':'Marco Túlio'};
+const SILVANE='487.471';
+const MESNUM={'01':'jan','02':'fev','03':'mar','04':'abr','05':'mai','06':'jun','07':'jul','08':'ago','09':'set','10':'out','11':'nov','12':'dez'};
+const ORDER=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const LAB={jan:'Jan',fev:'Fev',mar:'Mar',abr:'Abr',mai:'Mai',jun:'Jun',jul:'Jul',ago:'Ago',set:'Set',out:'Out',nov:'Nov',dez:'Dez'};
+const brl=v=>'R$ '+(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num=s=>parseFloat(s.replace(/\./g,'').replace(',','.'));
+const SUPABASE_URL='https://xxhwhkmsknleqqdozlwx.supabase.co';
+const SUPABASE_ANON='sb_publishable_LR6u6EzV9rcQyuoYnYF9rA_lmWt1o27';
+const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+let DB={};
+let USER_EMAIL='';
+
+// ---------- login ----------
+async function tryLogin(){
+  const email=document.getElementById('email').value.trim();
+  const pw=document.getElementById('pw').value;
+  const errEl=document.getElementById('loginErr');
+  if(!email||!pw){errEl.textContent='Informe e-mail e senha.';return;}
+  errEl.textContent='Entrando...';
+  try{
+    const {data,error}=await supa.auth.signInWithPassword({email,password:pw});
+    if(error){errEl.textContent='E-mail ou senha incorretos.';return;}
+    USER_EMAIL=data.user.email;
+    document.getElementById('login').style.display='none';
+    await loadMeses();
+  }catch(e){errEl.textContent='Erro de conexão. Tente de novo.';}
+}
+async function logout(){try{await supa.auth.signOut();}catch(e){} location.reload();}
+async function loadMeses(){
+  document.getElementById('userbar').textContent=USER_EMAIL;
+  try{
+    const {data,error}=await supa.from('cashflow_meses').select('key,payload');
+    DB={};
+    if(!error&&data) data.forEach(r=>DB[r.key]=r.payload);
+  }catch(e){}
+  render();
+}
+['email','pw'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();}));
+
+// ---------- parsing ----------
+const VAL=/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})([CD*])\s*$/;
+function itemsToLines(pages){
+  const lines=[];
+  for(const items of pages){
+    const rows={};
+    for(const it of items){if(!it.str.trim())continue;const y=Math.round(it.y);(rows[y]=rows[y]||[]).push(it);}
+    for(const y of Object.keys(rows).map(Number).sort((a,b)=>b-a))
+      lines.push(rows[y].sort((a,b)=>a.x-b.x).map(p=>p.str).join(' ').replace(/\s+/g,' ').trim());
+  }
+  return lines;
+}
+function parseStatement(lines){
+  let mes='??',ano='????',opening=null,final=null;const txs=[];let cur=null;
+  const full=lines.join('\n');
+  const per=full.match(/PER[ÍI]ODO:\s*(\d{2})\/(\d{2})\/(\d{4})/);if(per){mes=MESNUM[per[2]];ano=per[3];}
+  const fm=full.match(/\(\+\)\s*SALDO EM CONTA:\s*([\d.]+,\d{2})C/);if(fm)final=num(fm[1]);
+  for(const ln of lines){
+    const m=ln.match(VAL);
+    if(m){const H=m[2].toUpperCase().trim();
+      if(H.includes('SALDO ANTERIOR')&&opening===null){opening=num(m[3]);continue;}
+      if(H.startsWith('SALDO')||H.includes('SALDO BLOQ'))continue;
+      if(m[4]==='*')continue;
+      cur={dia:m[1],hist:m[2].trim(),val:(m[4]==='C'?num(m[3]):-num(m[3])),detail:[],ident:'',name:'',label:''};
+      txs.push(cur);
+    } else if(cur&&ln.trim()) cur.detail.push(ln.trim());
+  }
+  for(const t of txs)for(const d of t.detail){
+    if(/^\*{3}\.\d{3}\.\d{3}-\*{2}$/.test(d)||/^\d{2}\.\d{3}\.\d{3}\s*\/?\d{4}-\d{2}$/.test(d))t.ident=d;
+    else if(d.startsWith('DOC.:')||d.startsWith('CODIGO TED')){}
+    else if(/^FAV\.:|^REM\.:/.test(d))t.name=d.replace(/^FAV\.:|^REM\.:/,'').trim();
+    else if(['Recebimento Pix','Pagamento Pix','Transferência Pix'].includes(d)){}
+    else if(d===d.toUpperCase()&&d.length>4&&!d.startsWith('DOC')){if(!t.name)t.name=d;}
+    else if(!t.label)t.label=d;
+  }
+  return {mes,ano,opening,final,txs};
+}
+function sockMatch(t){
+  const blob=(t.ident+' '+t.name+' '+t.detail.join(' ')).toUpperCase();
+  for(const n in SOCIOS_NOME)if(blob.includes(n))return SOCIOS_NOME[n];
+  for(const k in SOCIOS_CNPJ)if(blob.includes(k))return SOCIOS_CNPJ[k];
+  for(const k in SOCIOS_CPF)if(blob.includes('.'+k+'-')||t.ident.includes(k))return SOCIOS_CPF[k];
+  return null;
+}
+function categorize(t){
+  const H=t.hist.toUpperCase(),lab=(t.label||'').toLowerCase(),v=t.val;
+  if(v>0){
+    if(H.includes('CR ANT'))return['cartao',null,null,''];
+    if(['PIX RECEB','TRANSF.RECEB','CRED.TR.CT','CRÉD.TED','CRED.TED','TRANSF. PIX'].some(k=>H.includes(k)))return['deposito',null,null,''];
+    return['deposito',null,null,'revisar entrada'];
+  }
+  const s=sockMatch(t);
+  if(s){
+    if(lab.includes('proctoria'))return['distrib',s,'proctoria',''];
+    if(lab.includes('dividendo'))return['distrib',s,'dividendo',''];
+    if(lab.includes('acerto'))return['distrib',s,'dividendo','acerto'];
+    return['distrib',s,'dividendo','conferir: distribuição (sem rótulo)'];
+  }
+  if((t.ident+t.detail.join('')).includes(SILVANE))return['salario',null,null,'Silvane'];
+  if(['FD-RFB','PREFEITURA','ORGÃOS GOV','ORGAOS GOV'].some(k=>H.includes(k)))return['imposto',null,null,''];
+  if(H.includes('PACOTE SERVI')||H.includes('SUBS/INTEG'))return['tarifa',null,null,''];
+  if(lab.includes('devolu'))return['devolucao',null,null,''];
+  if(H.includes('DÉB.TIT')||H.includes('DEB.TIT')||H.includes('COB.EFETIV')){
+    if(lab.includes('fibra'))return['material',null,null,''];
+    if(lab.includes('contador')||Math.abs(Math.abs(v)-810.50)<0.005||Math.abs(Math.abs(v)-759)<0.005)return['contador',null,null,''];
+    if(Math.abs(Math.abs(v)-532.61)<0.005||lab.includes('seguro'))return['seguro',null,null,''];
+    if(lab.includes('hrim'))return['exclus',null,null,''];
+    if(lab.includes('reparo'))return['material',null,null,''];
+    return['equip',null,null,'revisar (boleto sem rótulo)'];
+  }
+  if(H.includes('PIX EMIT')||H.includes('TRANSF. PIX'))return['material',null,null,'revisar (pagamento a terceiro)'];
+  return['material',null,null,'revisar'];
+}
+function aggregate(parsed){
+  const {txs,opening,final}=parsed;
+  const cats=['deposito','cartao','dinheiro','imposto','salario','contador','material','equip','exclus','seguro','tarifa','devolucao'];
+  const b={};cats.forEach(c=>b[c]=0);
+  const proc={},divi={};PARTNERS.forEach(p=>{proc[p]=0;divi[p]=0;});
+  const revisar=[];
+  for(const t of txs){
+    const [cat,p,sub,flag]=categorize(t);Object.assign(t,{cat,partner:p||'',sub:sub||'',flag});
+    if(txs.some(o=>o!==t&&o.dia===t.dia&&Math.abs(o.val+t.val)<0.005&&(((o.label+t.label).toLowerCase().includes('estorno'))||o.ident===t.ident||t.val>0))){t.pass=true;continue;}
+    if(cat==='distrib'){if(sub==='proctoria')proc[p]+=Math.abs(t.val);else divi[p]+=Math.abs(t.val);}
+    else b[cat]+=Math.abs(t.val);
+    if(flag.includes('revisar'))revisar.push({dia:t.dia,hist:t.hist,val:Math.abs(t.val),flag});
+  }
+  const ent=b.deposito+b.cartao+b.dinheiro;
+  const sai=b.imposto+b.salario+b.contador+b.material+b.equip+b.exclus+b.seguro+b.tarifa+b.devolucao;
+  const dist=PARTNERS.reduce((a,p)=>a+proc[p]+divi[p],0);
+  const calc=(opening||0)+ent-sai-dist;
+  return {mes:parsed.mes,ano:parsed.ano,b,proc,divi,ent,sai,dist,calc,opening,final,revisar,ok:Math.abs(calc-(final||0))<0.005};
+}
+
+// ---------- upload ----------
+const drop=document.getElementById('drop'),fileIn=document.getElementById('file');
+drop.onclick=()=>fileIn.click();
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('hover');};
+drop.ondragleave=()=>drop.classList.remove('hover');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('hover');handle(e.dataTransfer.files);};
+fileIn.onchange=e=>handle(e.target.files);
+
+async function handle(files){
+  for(const f of files){
+    try{
+      const buf=new Uint8Array(await f.arrayBuffer());
+      const doc=await pdfjsLib.getDocument({data:buf}).promise;
+      const pages=[];
+      for(let p=1;p<=doc.numPages;p++){const tc=await (await doc.getPage(p)).getTextContent();
+        pages.push(tc.items.filter(i=>i.str.trim()).map(i=>({str:i.str,x:i.transform[4],y:i.transform[5]})));}
+      const ag=aggregate(parseStatement(itemsToLines(pages)));
+      if(ag.mes==='??'){alert('Não reconheci este PDF como extrato Sicoob: '+f.name);continue;}
+      const key=ag.ano+'-'+ag.mes;
+      const {error}=await supa.from('cashflow_meses').upsert({key,mes:ag.mes,ano:ag.ano,payload:ag,updated_by:USER_EMAIL,updated_at:new Date().toISOString()});
+      if(error){alert('Erro ao salvar '+f.name+': '+error.message);}
+    }catch(err){alert('Erro ao ler '+f.name+': '+err.message);}
+  }
+  await loadMeses();
+}
+
+
+// ---------- render ----------
+let charts=[];
+function monthsSorted(){return Object.values(DB).sort((a,b)=>(a.ano-b.ano)||(ORDER.indexOf(a.mes)-ORDER.indexOf(b.mes)));}
+function render(){
+  charts.forEach(c=>c.destroy());charts=[];
+  const dash=document.getElementById('dash');
+  const M=monthsSorted();
+  if(!M.length){dash.innerHTML='<div class="panel"><div class="empty">Nenhum extrato carregado ainda.<br>Envie os PDFs do Sicoob para ver o painel.</div></div>';return;}
+  const last=M[M.length-1];
+  const totEnt=M.reduce((a,m)=>a+m.ent,0),totSai=M.reduce((a,m)=>a+m.sai,0),totDist=M.reduce((a,m)=>a+m.dist,0);
+  const perP={};PARTNERS.forEach(p=>perP[p]=M.reduce((a,m)=>a+m.proc[p]+m.divi[p],0));
+  const totP=PARTNERS.reduce((a,p)=>a+perP[p],0),media=totP/5;
+  const allRev=[];M.forEach(m=>m.revisar.forEach(r=>allRev.push({...r,mes:m.mes})));
+  const allOk=M.every(m=>m.ok);
+
+  let h='';
+  // KPIs
+  h+='<div class="cards">'
+   +kpi('teal','Saldo atual ('+LAB[last.mes]+')',brl(last.calc))
+   +kpi('green','Entradas (acum.)',brl(totEnt))
+   +kpi('red','Saídas (acum.)',brl(totSai))
+   +kpi('blue','Distribuído (acum.)',brl(totDist))
+   +'</div>';
+  // reconciliação
+  h+='<div class="panel"><h2>Conferência com o banco</h2><div class="body" style="padding:10px 14px">'
+   +M.map(m=>'<span style="margin-right:14px">'+LAB[m.mes]+'/'+m.ano+' '+(m.ok?'<span class="badge ok">OK</span>':'<span class="badge bad">conferir</span>')+'</span>').join('')
+   +'</div></div>';
+  // resumo mensal
+  h+='<div class="panel"><h2>Resumo mensal</h2><div class="scroll"><table><thead><tr><th>Indicador</th>'
+   +M.map(m=>'<th>'+LAB[m.mes]+'</th>').join('')+'<th>Total</th></tr></thead><tbody>';
+  h+=rowM('Entradas',M,m=>m.ent,'pos');
+  h+=rowM('Saídas',M,m=>m.sai,'neg');
+  h+=rowM('Resultado',M,m=>m.ent-m.sai);
+  h+=rowM('Distribuído',M,m=>m.dist);
+  h+=rowM('Saldo em conta',M,m=>m.calc,'',true);
+  h+='</tbody></table></div></div>';
+  // sócios
+  h+='<div class="row2">';
+  h+='<div class="panel"><h2>Recebido por sócio (acumulado)</h2><div class="scroll"><table><thead><tr><th>Sócio</th><th>Total</th><th>% </th></tr></thead><tbody>';
+  PARTNERS.forEach(p=>{h+='<tr><td>'+p+'</td><td>'+brl(perP[p])+'</td><td>'+(totP?(perP[p]/totP*100).toFixed(1):'0')+'%</td></tr>';});
+  h+='<tr class="tot"><td>TOTAL</td><td>'+brl(totP)+'</td><td>100%</td></tr></tbody></table></div></div>';
+  h+='<div class="panel"><h2>Equalização (vs média)</h2><div class="scroll"><table><thead><tr><th>Sócio</th><th>Recebido</th><th>Diferença</th></tr></thead><tbody>';
+  PARTNERS.forEach(p=>{const d=perP[p]-media;h+='<tr><td>'+p+'</td><td>'+brl(perP[p])+'</td><td class="'+(d>=0?'pos':'neg')+'">'+(d>=0?'+':'')+brl(d).replace('R$ ','')+'</td></tr>';});
+  h+='</tbody></table></div></div>';
+  h+='</div>';
+  // charts
+  h+='<div class="row2">'
+   +'<div class="panel"><h2>Evolução do saldo</h2><div class="chartwrap"><canvas id="cSaldo"></canvas></div></div>'
+   +'<div class="panel"><h2>Distribuição por sócio</h2><div class="chartwrap"><canvas id="cSoc"></canvas></div></div></div>';
+  // revisar
+  h+='<div class="panel"><h2>Lançamentos para revisar ('+allRev.length+')</h2><div class="body">';
+  if(!allRev.length)h+='<div class="empty" style="padding:18px">Nada pendente — tudo categorizado.</div>';
+  else allRev.forEach(r=>{h+='<div class="flag"><div><b>'+LAB[r.mes]+'</b> · '+r.dia+' · '+r.hist+'</div><div><span style="margin-right:10px">'+brl(r.val)+'</span><span class="t">'+r.flag+'</span></div></div>';});
+  h+='</div></div>';
+  dash.innerHTML=h;
+
+  // draw charts
+  const ctxS=document.getElementById('cSaldo');
+  charts.push(new Chart(ctxS,{type:'line',data:{labels:M.map(m=>LAB[m.mes]),datasets:[{label:'Saldo',data:M.map(m=>m.calc),borderColor:'#0E4D5C',backgroundColor:'#0E4D5C22',fill:true,tension:.25}]},options:chartOpt()}));
+  const ctxP=document.getElementById('cSoc');
+  charts.push(new Chart(ctxP,{type:'bar',data:{labels:PARTNERS,datasets:[{label:'Recebido',data:PARTNERS.map(p=>perP[p]),backgroundColor:'#1565C0'}]},options:chartOpt(true)}));
+}
+function kpi(c,l,v){return '<div class="kpi '+c+'"><div class="lab">'+l+'</div><div class="val">'+v+'</div></div>';}
+function rowM(label,M,fn,cls,bold){
+  const tot=M.reduce((a,m)=>a+fn(m),0);
+  return '<tr'+(bold?' class="tot"':'')+'><td>'+label+'</td>'+M.map(m=>'<td class="'+(cls||'')+'">'+brl(fn(m))+'</td>').join('')+'<td class="'+(cls||'')+'">'+brl(tot)+'</td></tr>';
+}
+function chartOpt(noLegend){return {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:!noLegend}},
+  scales:{y:{ticks:{callback:v=>'R$ '+(v/1000)+'k'}}}};}
+function exportCSV(){
+  const M=monthsSorted();if(!M.length){alert('Nada para exportar.');return;}
+  let rows=[['Mes','Entradas','Saidas','Resultado','Distribuido','Saldo',...PARTNERS]];
+  M.forEach(m=>rows.push([LAB[m.mes]+'/'+m.ano,m.ent,m.sai,m.ent-m.sai,m.dist,m.calc,...PARTNERS.map(p=>m.proc[p]+m.divi[p])]));
+  const csv=rows.map(r=>r.join(';')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='urolaser_resumo.csv';a.click();
+}
+/* render após login */
+</script>
+</body>
+</html>

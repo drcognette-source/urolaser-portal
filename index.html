@@ -95,6 +95,8 @@
       <span id="userbar" style="color:#cfe6ea;font-size:12px;margin-right:8px"></span>
       <button class="btn ghost" onclick="exportXlsx()">Excel</button>
       <button class="btn ghost" onclick="window.print()">PDF</button>
+      <button class="btn ghost" onclick="backupJSON()">Backup</button>
+      <button class="btn ghost" onclick="mfaEnroll()">2FA</button>
       <button class="btn ghost" onclick="logout()">Sair</button>
     </div>
   </div>
@@ -158,18 +160,16 @@ async function submitAuth(){
         return;
       }
       if(!data.session){
-        const r2=await supa.auth.signInWithPassword({email,password:pw});
-        if(r2.error){errEl.textContent='Acesso criado. Agora clique em Entrar com sua senha.';return;}
-        USER_EMAIL=(r2.data.user||{}).email||email;
+        errEl.textContent='Quase lá! Enviamos um link de confirmação para '+email+'. Confirme no seu e-mail e depois entre com a sua senha.';
+        return;
       } else { USER_EMAIL=email; }
     } else {
       const {data,error}=await supa.auth.signInWithPassword({email,password:pw});
       if(error){errEl.textContent='E-mail ou senha incorretos. Primeiro acesso? clique no link abaixo.';return;}
       USER_EMAIL=data.user.email;
     }
-    try{localStorage.setItem('uro_email',email);}catch(e){}
-    document.getElementById('login').style.display='none';
-    await loadMeses();
+    const aalOk=await ensureAAL2();
+    if(aalOk) await finishLogin(email);
   }catch(e){errEl.textContent='Erro de conexão. Tente de novo.';}
 }
 async function tryLogin(){return submitAuth();}
@@ -190,7 +190,7 @@ async function initAuth(){
   try{const le=localStorage.getItem('uro_email');if(le)document.getElementById('email').value=le;}catch(e){}
   try{
     const {data}=await supa.auth.getSession();
-    if(data&&data.session){USER_EMAIL=(data.session.user||{}).email||'';document.getElementById('login').style.display='none';await loadMeses();return;}
+    if(data&&data.session){USER_EMAIL=(data.session.user||{}).email||''; const ok=await ensureAAL2(); if(ok){document.getElementById('login').style.display='none';await loadMeses();} return;}
   }catch(e){}
   const em=document.getElementById('email');if(em.value){document.getElementById('pw').focus();}else{em.focus();}
 }
@@ -565,6 +565,71 @@ async function editTx(key,idx,value){
   DB[key]=ag;
   try{await supa.from('cashflow_meses').upsert({key:key,mes:ag.mes,ano:ag.ano,payload:ag,updated_by:USER_EMAIL,updated_at:new Date().toISOString()});}catch(e){}
   render();
+}
+function finishLogin(email){
+  try{localStorage.setItem('uro_email',email);}catch(e){}
+  document.getElementById('login').style.display='none';
+  return loadMeses();
+}
+async function ensureAAL2(){
+  try{
+    if(!supa.auth.mfa)return true;
+    const {data}=await supa.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(data&&data.nextLevel==='aal2'&&data.currentLevel!=='aal2'){
+      const {data:fl}=await supa.auth.mfa.listFactors();
+      const totp=fl&&fl.totp&&fl.totp[0];
+      if(totp){showLoginMfa(totp.id);return false;}
+    }
+  }catch(e){}
+  return true;
+}
+function showLoginMfa(factorId){
+  const box=document.querySelector('#login .box');
+  box.innerHTML='<h1>Urolaser</h1><p>Verificação em 2 passos</p><input id="mfaLoginCode" inputmode="numeric" autocomplete="one-time-code" placeholder="código do app (6 dígitos)" style="width:100%;padding:11px;border:1px solid #d8e0e2;border-radius:10px;font-size:16px;text-align:center;margin:6px 0"><button id="loginBtn" onclick="verifyLoginMfa(\''+factorId+'\')">Confirmar</button><div class="err" id="loginErr"></div>';
+  document.getElementById('mfaLoginCode').focus();
+}
+async function verifyLoginMfa(factorId){
+  const code=(document.getElementById('mfaLoginCode').value||'').trim();
+  const errEl=document.getElementById('loginErr');errEl.textContent='Verificando...';
+  try{
+    const {data:ch,error:e1}=await supa.auth.mfa.challenge({factorId});
+    if(e1){errEl.textContent=e1.message;return;}
+    const {error:e2}=await supa.auth.mfa.verify({factorId,challengeId:ch.id,code:code});
+    if(e2){errEl.textContent='Código inválido. Tente de novo.';return;}
+    const u=await supa.auth.getUser();USER_EMAIL=(u.data.user||{}).email||USER_EMAIL;
+    await finishLogin(USER_EMAIL);
+  }catch(e){errEl.textContent='Erro. Tente de novo.';}
+}
+async function mfaEnroll(){
+  if(!USER_EMAIL){alert('Entre no portal primeiro para ativar o 2FA.');return;}
+  try{
+    if(!supa.auth.mfa){alert('2FA indisponível nesta versão.');return;}
+    const {data,error}=await supa.auth.mfa.enroll({factorType:'totp',friendlyName:'Urolaser '+new Date().toISOString().slice(0,16)});
+    if(error){ if(/already|exist|enroll/i.test(error.message)){alert('Parece que o 2FA já está ativo na sua conta.');return;} alert('Erro: '+error.message);return;}
+    showMfaModal(data.totp.qr_code,data.totp.secret,data.id);
+  }catch(e){alert('Erro 2FA: '+e.message);}
+}
+function showMfaModal(qr,secret,factorId){
+  const img=(qr&&qr.indexOf('<svg')>=0)?qr:'<img src="'+qr+'" width="180" height="180">';
+  const ov=document.createElement('div');ov.className='ovl';ov.id='mfaOvl';
+  ov.innerHTML='<div class="modal"><h2>Ativar verificação em 2 passos (2FA)</h2><p class="msub">1) Abra um app autenticador (Google Authenticator, Authy, Microsoft Authenticator). 2) Escaneie o QR. 3) Digite o código de 6 dígitos.</p><div style="text-align:center;background:#fff;padding:10px;border-radius:8px">'+img+'</div><p style="font-size:11px;color:var(--muted);word-break:break-all;margin-top:8px">Não consegue escanear? Use a chave: <b>'+secret+'</b></p><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" placeholder="código de 6 dígitos" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:16px;text-align:center;margin-top:4px"><div class="rvfoot"><button class="btn2 ghost2" onclick="closeMfa()">Cancelar</button><button class="btn2" onclick="mfaActivate(\''+factorId+'\')">Ativar</button></div></div>';
+  document.body.appendChild(ov);
+}
+function closeMfa(){const o=document.getElementById('mfaOvl');if(o)o.remove();}
+async function mfaActivate(factorId){
+  const code=(document.getElementById('mfaCode').value||'').trim();
+  try{
+    const {data:ch,error:e1}=await supa.auth.mfa.challenge({factorId});
+    if(e1){alert(e1.message);return;}
+    const {error:e2}=await supa.auth.mfa.verify({factorId,challengeId:ch.id,code:code});
+    if(e2){alert('Código inválido. Confira o horário do celular e tente de novo.');return;}
+    closeMfa();alert('2FA ativado! A partir de agora vamos pedir o código do app ao entrar.');
+  }catch(e){alert('Erro: '+e.message);}
+}
+function backupJSON(){
+  const data={app:'Urolaser Fluxo de Caixa',exportadoEm:new Date().toISOString(),por:USER_EMAIL,meses:DB,contas:CONTAS,regras:RULES};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urolaser_backup_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();
 }
 /* render após login */
 </script>

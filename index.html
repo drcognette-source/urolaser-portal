@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{--teal:#0E4D5C;--teal2:#15707E;--green:#2E7D32;--red:#C62828;--blue:#1565C0;
         --gtx:#1B5E20;--rtx:#B71C1C;--btx:#0D47A1;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;}
@@ -70,6 +71,7 @@
   .rvfoot{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;border-top:1px solid var(--line)}
   .btn2{background:var(--teal);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:bold;cursor:pointer}
   .btn2.ghost2{background:#eef3f5;color:var(--ink)}
+  @media print{#login,.drop,header.top .btn,header.top span,.rvfoot{display:none!important}body{background:#fff}}
 </style>
 </head>
 <body>
@@ -91,7 +93,8 @@
     <div class="brand">UROLASER <small>Portal de Fluxo de Caixa</small></div>
     <div>
       <span id="userbar" style="color:#cfe6ea;font-size:12px;margin-right:8px"></span>
-      <button class="btn ghost" onclick="exportCSV()">Exportar CSV</button>
+      <button class="btn ghost" onclick="exportXlsx()">Excel</button>
+      <button class="btn ghost" onclick="window.print()">PDF</button>
       <button class="btn ghost" onclick="logout()">Sair</button>
     </div>
   </div>
@@ -369,6 +372,42 @@ async function handle(files){
 // ---------- render ----------
 let charts=[];
 function monthsSorted(){return Object.values(DB).sort((a,b)=>(a.ano-b.ano)||(ORDER.indexOf(a.mes)-ORDER.indexOf(b.mes)));}
+function exportXlsx(){
+  const M=monthsSorted(); if(!M.length){alert('Sem dados para exportar.');return;}
+  if(typeof XLSX==='undefined'){alert('Aguarde carregar e tente de novo.');return;}
+  const perP={};PARTNERS.forEach(p=>perP[p]=M.reduce((a,m)=>a+(m.proc[p]||0)+(m.divi[p]||0),0));
+  const head=['Indicador'].concat(M.map(m=>LAB[m.mes]+'/'+m.ano)).concat(['Total']);
+  const r=[head];
+  const line=(lbl,g,tot)=>{const v=M.map(g);r.push([lbl].concat(v).concat([tot===false?'':v.reduce((a,b)=>a+b,0)]));};
+  line('Entradas',m=>m.ent);
+  line('Saídas',m=>m.sai);
+  line('Resultado',m=>m.ent-m.sai);
+  line('Distribuído',m=>m.dist);
+  line('Saldo em conta',m=>m.calc,false);
+  r.push([]);r.push(['Recebido por sócio']);
+  PARTNERS.forEach(p=>line(p,m=>(m.proc[p]||0)+(m.divi[p]||0)));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Resumo');
+  XLSX.writeFile(wb,'urolaser_fluxo.xlsx');
+}
+function equalize(perP,D){
+  const c=PARTNERS.map(p=>perP[p]||0);
+  let lo=Math.min.apply(null,c),hi=Math.max.apply(null,c)+D+1;
+  for(let i=0;i<80;i++){const L=(lo+hi)/2;const sum=c.reduce((a,ci)=>a+Math.max(0,L-ci),0);if(sum>D)hi=L;else lo=L;}
+  const L=(lo+hi)/2,res={};PARTNERS.forEach(p=>res[p]=Math.max(0,L-(perP[p]||0)));return res;
+}
+function distribCalc(){
+  const M=monthsSorted();
+  const perP={};PARTNERS.forEach(p=>perP[p]=M.reduce((a,m)=>a+(m.proc[p]||0)+(m.divi[p]||0),0));
+  const D=parseFloat((document.getElementById('dValor')||{}).value)||0;
+  const modo=(document.getElementById('dModo')||{}).value||'igual';
+  let x={};
+  if(modo==='igual')PARTNERS.forEach(p=>x[p]=D/5);
+  else x=equalize(perP,D);
+  let rows='';PARTNERS.forEach(p=>rows+='<tr><td>'+p+'</td><td>'+brl(perP[p])+'</td><td><b>'+brl(x[p])+'</b></td><td>'+brl(perP[p]+x[p])+'</td></tr>');
+  const pix=PARTNERS.map(p=>p+': '+brl(x[p])).join('\n');
+  document.getElementById('dOut').innerHTML='<div class="scroll"><table><thead><tr><th>Sócio</th><th>Recebido até hoje</th><th>Pagar agora</th><th>Novo acumulado</th></tr></thead><tbody>'+rows+'<tr class="tot"><td>Total</td><td>—</td><td><b>'+brl(D)+'</b></td><td>—</td></tr></tbody></table></div><div style="margin-top:10px;font-size:12px"><b>Lista de pagamento:</b><pre style="background:#f5f7f8;padding:10px;border-radius:8px;white-space:pre-wrap;margin-top:4px">'+pix+'</pre><div style="font-size:11px;color:var(--muted);margin-top:4px">No modo "Equalizar", quem recebeu menos no acumulado recebe mais agora, deixando todos parelhos.</div></div>';
+}
 function render(){
   charts.forEach(c=>c.destroy());charts=[];
   const dash=document.getElementById('dash');
@@ -416,6 +455,19 @@ function render(){
    +'<div class="panel"><h2>Evolução do saldo</h2><div class="chartwrap"><canvas id="cSaldo"></canvas></div></div>'
    +'<div class="panel"><h2>Distribuição por sócio</h2><div class="chartwrap"><canvas id="cSoc"></canvas></div></div></div>';
   // revisar
+  const totResY=totEnt-totSai, retidoY=totResY-totDist;
+  const insumosY=M.reduce((a,m)=>a+((m.b||{}).material||0)+((m.b||{}).equip||0)+((m.b||{}).exclus||0)+((m.b||{}).seguro||0),0);
+  const impostosY=M.reduce((a,m)=>a+((m.b||{}).imposto||0),0);
+  const pctE=x=>totEnt?(x/totEnt*100).toFixed(1)+'%':'—';
+  h+='<div class="panel"><h2>📈 Indicadores (acumulado)</h2><div class="body"><div class="cards" style="margin:14px 14px 4px">'
+   +kpi('teal','Margem (Result./Entradas)',pctE(totResY))
+   +kpi('blue','Distribuído/Resultado',totResY?(totDist/totResY*100).toFixed(1)+'%':'—')
+   +kpi('green','Retido em caixa',brl(retidoY))
+   +kpi('red','Insumos+Equip / Entradas',pctE(insumosY))
+   +kpi('red','Impostos / Entradas',pctE(impostosY))
+   +'</div></div></div>';
+  const lastRes=M.length?(M[M.length-1].ent-M[M.length-1].sai):0;
+  h+='<div class="panel"><h2>💸 Distribuir lucro</h2><div class="body" style="padding:14px"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"><label style="font-size:11px;color:var(--muted)">Valor a distribuir (R$)<br><input id="dValor" type="number" value="'+lastRes.toFixed(2)+'" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:150px;font-size:14px"></label><label style="font-size:11px;color:var(--muted)">Modo<br><select id="dModo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px"><option value="igual">Igual entre os 5</option><option value="equalizar">Equalizar acumulado</option></select></label><button class="btn2" onclick="distribCalc()">Calcular</button></div><div id="dOut" style="margin-top:8px"></div></div></div>';
   h+='<div class="panel"><h2>Lançamentos para revisar ('+allRev.length+')</h2><div class="body">';
   if(!allRev.length)h+='<div class="empty" style="padding:18px">Nada pendente — tudo categorizado.</div>';
   else allRev.forEach(r=>{h+='<div class="flag"><div><b>'+LAB[r.mes]+'</b> · '+r.dia+' · '+r.hist+'</div><div><span style="margin-right:10px">'+brl(r.val)+'</span><span class="t">'+r.flag+'</span></div></div>';});

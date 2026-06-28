@@ -95,6 +95,7 @@
       <span id="userbar" style="color:#cfe6ea;font-size:12px;margin-right:8px"></span>
       <button class="btn" style="background:#0F9D58;border-color:#0F9D58" onclick="window.open('https://docs.google.com/spreadsheets/d/1yj6U_lcNADc812QuaqrJREHKczRSdW4r/edit?usp=sharing','_blank')" title="Planilha Google compartilhada (editar à mão)">📗 Planilha</button>
       <button class="btn ghost" onclick="exportXlsx()">Excel</button>
+      <button class="btn ghost" onclick="relatorioContador()" title="Relatório completo para o contador (Excel: entradas, saídas, distribuição por sócio mês a mês)">📑 Contador</button>
       <button class="btn ghost" onclick="window.print()">PDF</button>
       <button class="btn ghost" onclick="backupJSON()">Backup</button>
       <button class="btn ghost" onclick="mfaEnroll()">2FA</button>
@@ -402,6 +403,48 @@ function exportXlsx(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Resumo');
   XLSX.writeFile(wb,'urolaser_fluxo.xlsx');
+}
+function relatorioContador(){
+  const M=monthsSorted(); if(!M.length){alert('Sem dados para o relatório.');return;}
+  if(typeof XLSX==='undefined'){alert('Aguarde carregar e tente de novo.');return;}
+  const cols=M.map(m=>LAB[m.mes]+'/'+m.ano);
+  const tot=g=>M.map(g).reduce((a,b)=>a+b,0);
+  const line=(lbl,g)=>[lbl].concat(M.map(g)).concat([tot(g)]);
+  const B=(m,k)=>(m.b||{})[k]||0;
+  const wb=XLSX.utils.book_new();
+  // 1) Resumo Mensal
+  let r=[['UROLASER LTDA - Relatório para o Contador'],
+    ['Período: '+cols[0]+' a '+cols[cols.length-1]+'  ·  gerado em '+new Date().toLocaleDateString('pt-BR')],[],
+    ['Indicador'].concat(cols).concat(['Total'])];
+  r.push(line('(+) Entradas',m=>m.ent));
+  r.push(line('(-) Saídas',m=>m.sai));
+  r.push(line('(=) Resultado (Lucro)',m=>m.ent-m.sai));
+  r.push(line('(-) Distribuído aos sócios',m=>m.dist));
+  r.push(['(=) Saldo em conta (fim do mês)'].concat(M.map(m=>m.calc)).concat(['']));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Resumo Mensal');
+  // 2) Entradas e Saídas (detalhe)
+  r=[['ENTRADAS E SAÍDAS - detalhe por categoria'],[],['Categoria'].concat(cols).concat(['Total']),['ENTRADAS']];
+  r.push(line('  Depósitos / Pix / TED',m=>B(m,'deposito')));
+  r.push(line('  Cartão (antecipação)',m=>B(m,'cartao')));
+  r.push(line('  Dinheiro',m=>B(m,'dinheiro')));
+  r.push(line('  (=) Total Entradas',m=>m.ent));
+  r.push([]); r.push(['SAÍDAS']);
+  [['imposto','Impostos'],['material','Material / Insumos'],['equip','Equipamentos'],['salario','Salário / Equipe'],['contador','Contador'],['exclus','Exclusividade no hospital'],['seguro','Seguro de resp. civil'],['tarifa','Tarifas / Cota Sicoob'],['devolucao','Devolução a paciente']].forEach(p=>r.push(line('  '+p[1],m=>B(m,p[0]))));
+  r.push(line('  (=) Total Saídas',m=>m.sai));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Entradas e Saídas');
+  // 3) Distribuição por sócio mês a mês
+  r=[['DISTRIBUIÇÃO DE LUCROS POR SÓCIO - mês a mês'],
+    ['Valores efetivamente pagos (proctoria + dividendos/distribuição)'],[],
+    ['Sócio / tipo'].concat(cols).concat(['Total'])];
+  PARTNERS.forEach(p=>{
+    r.push(line(p+' - Proctoria',m=>(m.proc||{})[p]||0));
+    r.push(line(p+' - Dividendos / Distrib.',m=>(m.divi||{})[p]||0));
+    r.push(line(p+' - TOTAL',m=>((m.proc||{})[p]||0)+((m.divi||{})[p]||0)));
+    r.push([]);
+  });
+  r.push(line('TOTAL DISTRIBUÍDO',m=>m.dist));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Distribuição por Sócio');
+  XLSX.writeFile(wb,'Relatorio_Contador_Urolaser.xlsx');
 }
 function equalize(perP,D){
   const c=PARTNERS.map(p=>perP[p]||0);

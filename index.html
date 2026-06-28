@@ -129,6 +129,7 @@ const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
 let DB={};
 let RULES=[];
 let USER_EMAIL='';
+let CONTAS=[];
 
 // ---------- login ----------
 let signupMode=false;
@@ -180,6 +181,7 @@ async function loadMeses(){
     const {data,error}=await supa.from('cashflow_meses').select('key,payload');
     DB={};
     if(!error&&data) data.forEach(r=>DB[r.key]=r.payload);
+    CONTAS=[]; if(DB['__contas__']){CONTAS=(DB['__contas__'].itens)||[];delete DB['__contas__'];}
   }catch(e){}
   render();
 }
@@ -309,7 +311,7 @@ function computeAgg(parsed){
   const sai=b.imposto+b.salario+b.contador+b.material+b.equip+b.exclus+b.seguro+b.tarifa+b.devolucao;
   const dist=PARTNERS.reduce((a,p)=>a+proc[p]+divi[p],0);
   const calc=(opening||0)+ent-sai-dist;
-  return {mes:parsed.mes,ano:parsed.ano,b,proc,divi,ent,sai,dist,calc,opening,final,revisar,ok:Math.abs(calc-(final||0))<0.005};
+  return {mes:parsed.mes,ano:parsed.ano,b,proc,divi,ent,sai,dist,calc,opening,final,revisar,ok:Math.abs(calc-(final||0))<0.005,txs:txs.map(t=>({dia:t.dia,hist:t.hist,val:t.val,cat:t.cat,partner:t.partner||'',sub:t.sub||'',flag:t.flag||'',pass:!!t.pass}))};
 }
 function aggregate(parsed){assignCats(parsed);return computeAgg(parsed);}
 
@@ -381,7 +383,7 @@ async function handle(files){
 
 // ---------- render ----------
 let charts=[];
-function monthsSorted(){return Object.values(DB).sort((a,b)=>(a.ano-b.ano)||(ORDER.indexOf(a.mes)-ORDER.indexOf(b.mes)));}
+function monthsSorted(){return Object.values(DB).filter(m=>m&&ORDER.indexOf(m.mes)>=0).sort((a,b)=>(a.ano-b.ano)||(ORDER.indexOf(a.mes)-ORDER.indexOf(b.mes)));}
 function exportXlsx(){
   const M=monthsSorted(); if(!M.length){alert('Sem dados para exportar.');return;}
   if(typeof XLSX==='undefined'){alert('Aguarde carregar e tente de novo.');return;}
@@ -478,11 +480,16 @@ function render(){
    +'</div></div></div>';
   const lastRes=M.length?(M[M.length-1].ent-M[M.length-1].sai):0;
   h+='<div class="panel"><h2>💸 Distribuir lucro</h2><div class="body" style="padding:14px"><div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"><label style="font-size:11px;color:var(--muted)">Valor a distribuir (R$)<br><input id="dValor" type="number" value="'+lastRes.toFixed(2)+'" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:150px;font-size:14px"></label><label style="font-size:11px;color:var(--muted)">Modo<br><select id="dModo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px"><option value="igual">Igual entre os 5</option><option value="equalizar">Equalizar acumulado</option></select></label><button class="btn2" onclick="distribCalc()">Calcular</button></div><div id="dOut" style="margin-top:8px"></div></div></div>';
+  // contas a pagar/receber (#3)
+  h+='<div class="panel"><h2>📅 Contas a pagar / receber</h2><div class="body" style="padding:14px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><label style="font-size:11px;color:var(--muted)">Descrição<br><input id="cDesc" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:200px;font-size:14px"></label><label style="font-size:11px;color:var(--muted)">Valor (R$)<br><input id="cVal" type="number" style="padding:8px;border:1px solid var(--line);border-radius:8px;width:120px;font-size:14px"></label><label style="font-size:11px;color:var(--muted)">Vencimento<br><input id="cVenc" type="date" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px"></label><label style="font-size:11px;color:var(--muted)">Tipo<br><select id="cTipo" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px"><option value="pagar">A pagar</option><option value="receber">A receber</option></select></label><button class="btn2" onclick="addConta()">Adicionar</button></div><div id="contasOut" style="margin-top:10px"></div></div></div>';
+  // lançamentos editáveis (#5)
+  h+='<div class="panel"><h2>🧾 Lançamentos (corrigir categoria/sócio)</h2><div class="body" style="padding:4px 14px 14px"><div id="lancOut"></div></div></div>';
   h+='<div class="panel"><h2>Lançamentos para revisar ('+allRev.length+')</h2><div class="body">';
   if(!allRev.length)h+='<div class="empty" style="padding:18px">Nada pendente — tudo categorizado.</div>';
   else allRev.forEach(r=>{h+='<div class="flag"><div><b>'+LAB[r.mes]+'</b> · '+r.dia+' · '+r.hist+'</div><div><span style="margin-right:10px">'+brl(r.val)+'</span><span class="t">'+r.flag+'</span></div></div>';});
   h+='</div></div>';
   dash.innerHTML=h;
+  renderContas();renderLanc();
 
   // draw charts
   const ctxS=document.getElementById('cSaldo');
@@ -503,6 +510,61 @@ function exportCSV(){
   M.forEach(m=>rows.push([LAB[m.mes]+'/'+m.ano,m.ent,m.sai,m.ent-m.sai,m.dist,m.calc,...PARTNERS.map(p=>m.proc[p]+m.divi[p])]));
   const csv=rows.map(r=>r.join(';')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='urolaser_resumo.csv';a.click();
+}
+async function saveContas(){
+  try{await supa.from('cashflow_meses').upsert({key:'__contas__',mes:'-',ano:'-',payload:{itens:CONTAS},updated_by:USER_EMAIL,updated_at:new Date().toISOString()});}catch(e){}
+}
+function addConta(){
+  const desc=(document.getElementById('cDesc').value||'').trim();
+  const val=parseFloat(document.getElementById('cVal').value)||0;
+  const venc=document.getElementById('cVenc').value||'';
+  const tipo=document.getElementById('cTipo').value||'pagar';
+  if(!desc||!val){alert('Informe descrição e valor.');return;}
+  CONTAS.push({desc:desc,val:val,venc:venc,tipo:tipo,pago:false});
+  document.getElementById('cDesc').value='';document.getElementById('cVal').value='';document.getElementById('cVenc').value='';
+  saveContas();renderContas();
+}
+function toggleConta(i){if(CONTAS[i]){CONTAS[i].pago=!CONTAS[i].pago;saveContas();renderContas();}}
+function removeConta(i){if(CONTAS[i]){CONTAS.splice(i,1);saveContas();renderContas();}}
+function renderContas(){
+  const out=document.getElementById('contasOut');if(!out)return;
+  const M=monthsSorted();const saldo=M.length?M[M.length-1].calc:0;
+  if(!CONTAS.length){out.innerHTML='<div class="empty" style="padding:14px">Nenhuma conta cadastrada ainda.</div>';return;}
+  const sorted=CONTAS.map((c,i)=>Object.assign({},c,{i:i})).sort((a,b)=>(a.venc||'').localeCompare(b.venc||''));
+  let pagar=0,receber=0,rows='';
+  sorted.forEach(c=>{
+    if(!c.pago&&c.tipo==='pagar')pagar+=c.val;
+    if(!c.pago&&c.tipo==='receber')receber+=c.val;
+    rows+='<tr style="'+(c.pago?'opacity:.5':'')+'"><td><input type="checkbox" '+(c.pago?'checked':'')+' onchange="toggleConta('+c.i+')"></td><td>'+(c.venc||'—')+'</td><td>'+c.desc+'</td><td>'+(c.tipo==='pagar'?'A pagar':'A receber')+'</td><td class="'+(c.tipo==='pagar'?'neg':'pos')+'">'+brl(c.val)+'</td><td><span style="cursor:pointer;color:#c0392b" onclick="removeConta('+c.i+')">✕</span></td></tr>';
+  });
+  out.innerHTML='<div class="scroll"><table><thead><tr><th>Pago</th><th>Vencimento</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="cards" style="margin-top:10px">'+kpi('teal','Saldo atual',brl(saldo))+kpi('red','A pagar (aberto)',brl(pagar))+kpi('green','A receber (aberto)',brl(receber))+kpi('blue','Saldo projetado',brl(saldo-pagar+receber))+'</div>';
+}
+function lancCatOptions(t){
+  const ALL=CAT_OPTS.map(o=>[o[0]+'|||',o[1]]).concat(PARTNERS.map(p=>['distrib|dividendo|'+p,'Dividendos — '+p])).concat(PARTNERS.map(p=>['distrib|proctoria|'+p,'Proctoria — '+p]));
+  const cur=t.pass?'passthrough|||':(t.cat==='distrib'?'distrib|'+(t.sub||'dividendo')+'|'+(t.partner||PARTNERS[0]):(t.cat||'')+'|||');
+  return ALL.map(x=>'<option value="'+x[0]+'"'+(x[0]===cur?' selected':'')+'>'+x[1]+'</option>').join('');
+}
+function renderLanc(){
+  const out=document.getElementById('lancOut');if(!out)return;
+  const M=monthsSorted();let html='';
+  M.forEach(m=>{const txs=m.txs||[];if(!txs.length)return;
+    html+='<div style="font-weight:700;color:var(--teal);margin:12px 0 4px">'+LAB[m.mes]+'/'+m.ano+'</div><div class="scroll"><table><thead><tr><th>Dia</th><th>Histórico</th><th>Valor</th><th>Categoria / sócio</th></tr></thead><tbody>';
+    txs.forEach((t,idx)=>{html+='<tr><td>'+t.dia+'</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.hist+'</td><td>'+brl(Math.abs(t.val))+'</td><td><select class="rvsel" onchange="editTx(\''+(m.ano+'-'+m.mes)+'\','+idx+',this.value)">'+lancCatOptions(t)+'</select></td></tr>';});
+    html+='</tbody></table></div>';
+  });
+  out.innerHTML=html||'<div class="empty" style="padding:14px">Sem lançamentos detalhados ainda.</div>';
+}
+async function editTx(key,idx,value){
+  const m=DB[key];if(!m||!m.txs||!m.txs[idx])return;
+  const pr=value.split('|');const cat=pr[0],sub=pr[1]||'',socio=pr[2]||'';
+  const t=m.txs[idx];t.flag='';
+  if(cat==='distrib'){t.cat='distrib';t.partner=socio;t.sub=sub;t.pass=false;}
+  else if(cat==='passthrough'){t.pass=true;t.cat='passthrough';}
+  else{t.cat=cat;t.partner='';t.sub='';t.pass=false;}
+  const ag=computeAgg({txs:m.txs,opening:m.opening,final:m.final,mes:m.mes,ano:m.ano});
+  DB[key]=ag;
+  try{await supa.from('cashflow_meses').upsert({key:key,mes:ag.mes,ano:ag.ano,payload:ag,updated_by:USER_EMAIL,updated_at:new Date().toISOString()});}catch(e){}
+  render();
 }
 /* render após login */
 </script>

@@ -8,6 +8,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{--teal:#0E4D5C;--teal2:#15707E;--green:#2E7D32;--red:#C62828;--blue:#1565C0;
         --gtx:#1B5E20;--rtx:#B71C1C;--btx:#0D47A1;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;}
@@ -95,7 +97,7 @@
       <span id="userbar" style="color:#cfe6ea;font-size:12px;margin-right:8px"></span>
       <button class="btn" style="background:#0F9D58;border-color:#0F9D58" onclick="window.open('https://docs.google.com/spreadsheets/d/1yj6U_lcNADc812QuaqrJREHKczRSdW4r/edit?usp=sharing','_blank')" title="Planilha Google compartilhada (editar à mão)">📗 Planilha</button>
       <button class="btn ghost" onclick="exportXlsx()">Excel</button>
-      <button class="btn ghost" onclick="relatorioContador()" title="Relatório completo para o contador (Excel: entradas, saídas, distribuição por sócio mês a mês)">📑 Contador</button>
+      <button class="btn ghost" onclick="relatorioContadorPDF()" title="Relatório completo para o contador em PDF (entradas, saídas, distribuição por sócio mês a mês)">📑 Contador</button>
       <button class="btn ghost" onclick="window.print()">PDF</button>
       <button class="btn ghost" onclick="backupJSON()">Backup</button>
       <button class="btn ghost" onclick="mfaEnroll()">2FA</button>
@@ -403,6 +405,74 @@ function exportXlsx(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),'Resumo');
   XLSX.writeFile(wb,'urolaser_fluxo.xlsx');
+}
+function relatorioContadorPDF(){
+  const M=monthsSorted(); if(!M.length){alert('Sem dados para o relatório.');return;}
+  if(!(window.jspdf&&window.jspdf.jsPDF)){alert('Aguarde carregar e tente de novo.');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(), Hh=doc.internal.pageSize.getHeight();
+  const cols=M.map(m=>LAB[m.mes]+'/'+m.ano);
+  const fmt=v=>(v===null||v===undefined||v==='')?'':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const tot=g=>M.reduce((a,m)=>a+g(m),0);
+  const B=(m,k)=>(m.b||{})[k]||0;
+  const teal=[14,77,92], lightteal=[225,238,240];
+  function header(){
+    doc.setFillColor(14,77,92);doc.rect(0,0,W,52,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text('UROLASER LTDA',40,24);
+    doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.text('Relatório para o Contador  ·  valores em R$',40,40);
+    doc.setFontSize(8.5);doc.setTextColor(200,224,230);
+    doc.text('Período: '+cols[0]+' a '+cols[cols.length-1]+'   ·   gerado em '+new Date().toLocaleDateString('pt-BR'),W-40,30,{align:'right'});
+  }
+  header(); let y=66;
+  const headRow=[['Indicador'].concat(cols).concat(['Total'])];
+  function drawTable(title,body,boldRows){
+    doc.setTextColor(14,77,92);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text(title,40,y);y+=6;
+    doc.autoTable({startY:y,head:headRow,body:body,theme:'grid',
+      headStyles:{fillColor:teal,textColor:255,fontSize:8,halign:'right',lineColor:teal},
+      bodyStyles:{fontSize:8,halign:'right',cellPadding:3,lineColor:[210,220,224],textColor:[35,50,58]},
+      alternateRowStyles:{fillColor:[250,252,252]},
+      columnStyles:{0:{halign:'left'}},
+      margin:{left:40,right:40},
+      didParseCell:function(d){
+        if(d.section==='body'){
+          const lbl=(d.row.raw&&d.row.raw[0])||'';
+          if(boldRows&&boldRows.some(x=>lbl.indexOf(x)>=0)){d.cell.styles.fontStyle='bold';d.cell.styles.fillColor=lightteal;}
+        }
+      }});
+    y=doc.lastAutoTable.finalY+16;
+    if(y>Hh-90){doc.addPage();header();y=66;}
+  }
+  // 1) Resumo
+  const r1=[
+    ['(+) Entradas'].concat(M.map(m=>fmt(m.ent))).concat([fmt(tot(m=>m.ent))]),
+    ['(-) Saídas'].concat(M.map(m=>fmt(m.sai))).concat([fmt(tot(m=>m.sai))]),
+    ['(=) Resultado (Lucro)'].concat(M.map(m=>fmt(m.ent-m.sai))).concat([fmt(tot(m=>m.ent-m.sai))]),
+    ['(-) Distribuído aos sócios'].concat(M.map(m=>fmt(m.dist))).concat([fmt(tot(m=>m.dist))]),
+    ['(=) Saldo em conta (fim do mês)'].concat(M.map(m=>fmt(m.calc))).concat([''])
+  ];
+  drawTable('1. Resumo Mensal',r1,['(=) Resultado','(=) Saldo']);
+  // 2) Entradas e Saídas detalhe
+  const r2=[];
+  r2.push(['ENTRADAS'].concat(cols.map(()=>'')).concat(['']));
+  r2.push(['  Depósitos / Pix / TED'].concat(M.map(m=>fmt(B(m,'deposito')))).concat([fmt(tot(m=>B(m,'deposito')))]));
+  r2.push(['  Cartão (antecipação)'].concat(M.map(m=>fmt(B(m,'cartao')))).concat([fmt(tot(m=>B(m,'cartao')))]));
+  r2.push(['  Dinheiro'].concat(M.map(m=>fmt(B(m,'dinheiro')))).concat([fmt(tot(m=>B(m,'dinheiro')))]));
+  r2.push(['  (=) Total Entradas'].concat(M.map(m=>fmt(m.ent))).concat([fmt(tot(m=>m.ent))]));
+  r2.push(['SAÍDAS'].concat(cols.map(()=>'')).concat(['']));
+  [['imposto','Impostos'],['material','Material / Insumos'],['equip','Equipamentos'],['salario','Salário / Equipe'],['contador','Contador'],['exclus','Exclusividade no hospital'],['seguro','Seguro de resp. civil'],['tarifa','Tarifas / Cota Sicoob'],['devolucao','Devolução a paciente']].forEach(p=>r2.push(['  '+p[1]].concat(M.map(m=>fmt(B(m,p[0])))).concat([fmt(tot(m=>B(m,p[0])))])));
+  r2.push(['  (=) Total Saídas'].concat(M.map(m=>fmt(m.sai))).concat([fmt(tot(m=>m.sai))]));
+  drawTable('2. Entradas e Saídas - detalhe por categoria',r2,['ENTRADAS','SAÍDAS','(=) Total']);
+  // 3) Distribuição por sócio mês a mês
+  const r3=[];
+  PARTNERS.forEach(p=>{
+    r3.push([p+' - Proctoria'].concat(M.map(m=>fmt((m.proc||{})[p]||0))).concat([fmt(tot(m=>(m.proc||{})[p]||0))]));
+    r3.push([p+' - Dividendos / Distrib.'].concat(M.map(m=>fmt((m.divi||{})[p]||0))).concat([fmt(tot(m=>(m.divi||{})[p]||0))]));
+    r3.push([p+' - TOTAL'].concat(M.map(m=>fmt(((m.proc||{})[p]||0)+((m.divi||{})[p]||0)))).concat([fmt(tot(m=>((m.proc||{})[p]||0)+((m.divi||{})[p]||0)))]));
+  });
+  r3.push(['TOTAL DISTRIBUÍDO'].concat(M.map(m=>fmt(m.dist))).concat([fmt(tot(m=>m.dist))]));
+  drawTable('3. Distribuição de lucros por sócio - mês a mês',r3,[' - TOTAL','TOTAL DISTRIBUÍDO']);
+  doc.save('Relatorio_Contador_Urolaser.pdf');
 }
 function relatorioContador(){
   const M=monthsSorted(); if(!M.length){alert('Sem dados para o relatório.');return;}

@@ -59,6 +59,17 @@
   .note{font-size:11px;color:#90a0aa;text-align:center;margin:8px 0 30px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
   @media(max-width:760px){.row2{grid-template-columns:1fr}}
+  .ovl{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal{background:#fff;border-radius:14px;max-width:700px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #0006}
+  .modal h2{background:var(--teal);color:#fff;font-size:15px;padding:14px 18px;border-radius:14px 14px 0 0}
+  .msub{color:var(--muted);font-size:12.5px;padding:10px 18px 0}
+  .rvlist{overflow:auto;padding:6px 18px}
+  .rvrow{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+  .rvinfo{font-size:12.5px;flex:1}.rvinfo .t{color:var(--muted)}
+  .rvsel{padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;min-width:210px}
+  .rvfoot{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;border-top:1px solid var(--line)}
+  .btn2{background:var(--teal);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:bold;cursor:pointer}
+  .btn2.ghost2{background:#eef3f5;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -113,6 +124,7 @@ const SUPABASE_URL='https://xxhwhkmsknleqqdozlwx.supabase.co';
 const SUPABASE_ANON='sb_publishable_LR6u6EzV9rcQyuoYnYF9rA_lmWt1o27';
 const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
 let DB={};
+let RULES=[];
 let USER_EMAIL='';
 
 // ---------- login ----------
@@ -159,6 +171,7 @@ async function tryLogin(){return submitAuth();}
 async function logout(){try{await supa.auth.signOut();}catch(e){} location.reload();}
 async function loadMeses(){
   document.getElementById('userbar').textContent=USER_EMAIL;
+  try{const rr=await supa.from('regras_categoria').select('*');RULES=rr.data||[];}catch(e){RULES=[];}
   try{
     const {data,error}=await supa.from('cashflow_meses').select('key,payload');
     DB={};
@@ -212,7 +225,25 @@ function sockMatch(t){
   for(const k in SOCIOS_CPF)if(blob.includes('.'+k+'-')||t.ident.includes(k))return SOCIOS_CPF[k];
   return null;
 }
+function matchRule(t){
+  const ident=(t.ident||'').replace(/\s/g,'');
+  const blob=((t.label||'')+' '+(t.hist||'')).toLowerCase();
+  for(const r of RULES){
+    if(r.tipo==='ident'&&r.valor&&ident&&ident.indexOf(String(r.valor).replace(/\s/g,''))>=0)return r;
+    if(r.tipo==='label'&&r.valor&&blob.indexOf(String(r.valor).toLowerCase())>=0)return r;
+    if(r.tipo==='valor'&&Math.abs(Math.abs(t.val)-parseFloat(r.valor))<0.005)return r;
+  }
+  return null;
+}
 function categorize(t){
+  const res=categorizeBase(t);
+  if(res[3]&&res[3].indexOf('revisar')>=0){
+    const r=matchRule(t);
+    if(r)return[r.categoria,r.socio||null,r.sub||null,'regra'];
+  }
+  return res;
+}
+function categorizeBase(t){
   const H=t.hist.toUpperCase(),lab=(t.label||'').toLowerCase(),v=t.val;
   if(v>0){
     if(H.includes('CR ANT'))return['cartao',null,null,''];
@@ -241,17 +272,24 @@ function categorize(t){
   if(H.includes('PIX EMIT')||H.includes('TRANSF. PIX'))return['material',null,null,'revisar (pagamento a terceiro)'];
   return['material',null,null,'revisar'];
 }
-function aggregate(parsed){
+function assignCats(parsed){
+  const {txs}=parsed;
+  for(const t of txs){
+    const [cat,p,sub,flag]=categorize(t);Object.assign(t,{cat,partner:p||'',sub:sub||'',flag});
+    if(txs.some(o=>o!==t&&o.dia===t.dia&&Math.abs(o.val+t.val)<0.005&&(((o.label+t.label).toLowerCase().includes('estorno'))||o.ident===t.ident||t.val>0))){t.pass=true;}
+  }
+}
+function computeAgg(parsed){
   const {txs,opening,final}=parsed;
   const cats=['deposito','cartao','dinheiro','imposto','salario','contador','material','equip','exclus','seguro','tarifa','devolucao'];
   const b={};cats.forEach(c=>b[c]=0);
   const proc={},divi={};PARTNERS.forEach(p=>{proc[p]=0;divi[p]=0;});
   const revisar=[];
   for(const t of txs){
-    const [cat,p,sub,flag]=categorize(t);Object.assign(t,{cat,partner:p||'',sub:sub||'',flag});
-    if(txs.some(o=>o!==t&&o.dia===t.dia&&Math.abs(o.val+t.val)<0.005&&(((o.label+t.label).toLowerCase().includes('estorno'))||o.ident===t.ident||t.val>0))){t.pass=true;continue;}
+    if(t.pass)continue;
+    const cat=t.cat,p=t.partner,sub=t.sub,flag=t.flag||'';
     if(cat==='distrib'){if(sub==='proctoria')proc[p]+=Math.abs(t.val);else divi[p]+=Math.abs(t.val);}
-    else b[cat]+=Math.abs(t.val);
+    else if(b.hasOwnProperty(cat)) b[cat]+=Math.abs(t.val);
     if(flag.includes('revisar'))revisar.push({dia:t.dia,hist:t.hist,val:Math.abs(t.val),flag});
   }
   const ent=b.deposito+b.cartao+b.dinheiro;
@@ -260,6 +298,7 @@ function aggregate(parsed){
   const calc=(opening||0)+ent-sai-dist;
   return {mes:parsed.mes,ano:parsed.ano,b,proc,divi,ent,sai,dist,calc,opening,final,revisar,ok:Math.abs(calc-(final||0))<0.005};
 }
+function aggregate(parsed){assignCats(parsed);return computeAgg(parsed);}
 
 // ---------- upload ----------
 const drop=document.getElementById('drop'),fileIn=document.getElementById('file');
@@ -269,6 +308,41 @@ drop.ondragleave=()=>drop.classList.remove('hover');
 drop.ondrop=e=>{e.preventDefault();drop.classList.remove('hover');handle(e.dataTransfer.files);};
 fileIn.onchange=e=>handle(e.target.files);
 
+const CAT_OPTS=[['deposito','Depósito / Pix / TED (entrada)'],['cartao','Cartão (entrada)'],['material','Material / Insumos'],['equip','Equipamentos'],['imposto','Impostos'],['salario','Salário / Equipe'],['contador','Contador'],['exclus','Exclusividade no hospital'],['seguro','Seguro de resp. civil'],['tarifa','Tarifas / Cota Sicoob'],['devolucao','Devolução a paciente'],['passthrough','Repasse / estorno (ignorar)']];
+function reviewModal(parsed,unresolved){
+  return new Promise(resolve=>{
+    const ALL=[...CAT_OPTS.map(o=>[o[0]+'|||',o[1]]), ...PARTNERS.map(p=>['distrib|dividendo|'+p,'Dividendos — '+p]), ...PARTNERS.map(p=>['distrib|proctoria|'+p,'Proctoria — '+p])];
+    let rows='';
+    unresolved.forEach((t,i)=>{
+      const def = t.cat==='distrib' ? 'distrib|'+(t.sub||'dividendo')+'|'+(t.partner||PARTNERS[0]) : t.cat+'|||';
+      let o=''; ALL.forEach(x=>o+='<option value="'+x[0]+'"'+(x[0]===def?' selected':'')+'>'+x[1]+'</option>');
+      const who=((t.name||'')||(t.ident||'')).slice(0,42);
+      rows+='<div class="rvrow"><div class="rvinfo"><b>'+t.dia+'</b> · '+t.hist+' · <b>'+brl(Math.abs(t.val))+'</b>'+(who?'<br><span class="t">'+who+'</span>':'')+'</div><select data-i="'+i+'" class="rvsel">'+o+'</select></div>';
+    });
+    const ov=document.createElement('div'); ov.className='ovl';
+    ov.innerHTML='<div class="modal"><h2>Precisa da sua ajuda — '+unresolved.length+' lançamento(s)</h2><p class="msub">Classifique cada item. O sistema vai lembrar para os próximos meses.</p><div class="rvlist">'+rows+'</div><div class="rvfoot"><button class="btn2 ghost2" id="rvSkip">Pular por agora</button><button class="btn2" id="rvSave">Salvar e aprender</button></div></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#rvSkip').onclick=()=>{ov.remove();resolve();};
+    ov.querySelector('#rvSave').onclick=async()=>{
+      const newRules=[];
+      ov.querySelectorAll('.rvsel').forEach(sel=>{
+        const t=unresolved[+sel.getAttribute('data-i')];
+        const pr=sel.value.split('|'); const cat=pr[0],sub=pr[1]||'',socio=pr[2]||'';
+        t.flag='';
+        if(cat==='distrib'){t.cat='distrib';t.partner=socio;t.sub=sub;}
+        else if(cat==='passthrough'){t.pass=true;t.cat='passthrough';}
+        else {t.cat=cat;t.partner='';t.sub='';}
+        let tipo='valor',valor=String(Math.abs(t.val));
+        if(t.ident&&t.ident.trim()){tipo='ident';valor=t.ident.trim();}
+        else if(t.label&&t.label.trim()){tipo='label';valor=t.label.trim();}
+        newRules.push({tipo,valor,categoria:cat,sub:sub||null,socio:socio||null,criado_por:USER_EMAIL});
+      });
+      try{ if(newRules.length) await supa.from('regras_categoria').insert(newRules); }catch(e){}
+      try{ const r=await supa.from('regras_categoria').select('*'); RULES=r.data||RULES; }catch(e){}
+      ov.remove(); resolve();
+    };
+  });
+}
 async function handle(files){
   for(const f of files){
     try{
@@ -277,8 +351,12 @@ async function handle(files){
       const pages=[];
       for(let p=1;p<=doc.numPages;p++){const tc=await (await doc.getPage(p)).getTextContent();
         pages.push(tc.items.filter(i=>i.str.trim()).map(i=>({str:i.str,x:i.transform[4],y:i.transform[5]})));}
-      const ag=aggregate(parseStatement(itemsToLines(pages)));
-      if(ag.mes==='??'){alert('Não reconheci este PDF como extrato Sicoob: '+f.name);continue;}
+      const parsed=parseStatement(itemsToLines(pages));
+      if(parsed.mes==='??'){alert('Não reconheci este PDF como extrato Sicoob: '+f.name);continue;}
+      assignCats(parsed);
+      const unresolved=parsed.txs.filter(t=>!t.pass&&t.flag&&t.flag.indexOf('revisar')>=0);
+      if(unresolved.length) await reviewModal(parsed,unresolved);
+      const ag=computeAgg(parsed);
       const key=ag.ano+'-'+ag.mes;
       const {error}=await supa.from('cashflow_meses').upsert({key,mes:ag.mes,ano:ag.ano,payload:ag,updated_by:USER_EMAIL,updated_at:new Date().toISOString()});
       if(error){alert('Erro ao salvar '+f.name+': '+error.message);}

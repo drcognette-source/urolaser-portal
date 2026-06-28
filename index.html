@@ -69,9 +69,9 @@
     <p>Portal de Fluxo de Caixa — acesso dos sócios</p>
     <input id="email" type="email" placeholder="seu e-mail" autocomplete="username">
     <input id="pw" type="password" placeholder="sua senha" autocomplete="current-password">
-    <button onclick="tryLogin()">Entrar</button>
+    <button id="loginBtn" onclick="submitAuth()">Entrar</button>
     <div class="err" id="loginErr"></div>
-    <div class="hint">Acesso individual por sócio. Esqueceu a senha? Fale com o Dr. Marcel.</div>
+    <div class="hint" id="modeHint">Primeiro acesso? <a href="#" onclick="toggleMode();return false;" style="color:var(--teal);font-weight:bold;text-decoration:none">Criar minha senha</a></div>
   </div>
 </div>
 
@@ -116,20 +116,46 @@ let DB={};
 let USER_EMAIL='';
 
 // ---------- login ----------
-async function tryLogin(){
-  const email=document.getElementById('email').value.trim();
+let signupMode=false;
+function toggleMode(){
+  signupMode=!signupMode;
+  document.getElementById('loginBtn').textContent = signupMode ? 'Criar senha e entrar' : 'Entrar';
+  document.getElementById('pw').placeholder = signupMode ? 'crie uma senha (mín. 6)' : 'sua senha';
+  document.getElementById('modeHint').innerHTML = signupMode
+    ? 'Já tem senha? <a href="#" onclick="toggleMode();return false;" style="color:var(--teal);font-weight:bold;text-decoration:none">Entrar</a>'
+    : 'Primeiro acesso? <a href="#" onclick="toggleMode();return false;" style="color:var(--teal);font-weight:bold;text-decoration:none">Criar minha senha</a>';
+  document.getElementById('loginErr').textContent='';
+}
+async function submitAuth(){
+  const email=document.getElementById('email').value.trim().toLowerCase();
   const pw=document.getElementById('pw').value;
   const errEl=document.getElementById('loginErr');
   if(!email||!pw){errEl.textContent='Informe e-mail e senha.';return;}
-  errEl.textContent='Entrando...';
+  errEl.textContent = signupMode ? 'Criando seu acesso...' : 'Entrando...';
   try{
-    const {data,error}=await supa.auth.signInWithPassword({email,password:pw});
-    if(error){errEl.textContent='E-mail ou senha incorretos.';return;}
-    USER_EMAIL=data.user.email;
+    if(signupMode){
+      if(pw.length<6){errEl.textContent='A senha precisa de ao menos 6 caracteres.';return;}
+      const {data,error}=await supa.auth.signUp({email,password:pw});
+      if(error){
+        errEl.textContent = /autoriz/i.test(error.message) ? 'E-mail não autorizado. Fale com o Dr. Marcel.'
+          : (/registered|already/i.test(error.message) ? 'Você já tem cadastro. Clique em "Entrar".' : ('Erro: '+error.message));
+        return;
+      }
+      if(!data.session){
+        const r2=await supa.auth.signInWithPassword({email,password:pw});
+        if(r2.error){errEl.textContent='Acesso criado. Agora clique em Entrar com sua senha.';return;}
+        USER_EMAIL=(r2.data.user||{}).email||email;
+      } else { USER_EMAIL=email; }
+    } else {
+      const {data,error}=await supa.auth.signInWithPassword({email,password:pw});
+      if(error){errEl.textContent='E-mail ou senha incorretos. Primeiro acesso? clique no link abaixo.';return;}
+      USER_EMAIL=data.user.email;
+    }
     document.getElementById('login').style.display='none';
     await loadMeses();
   }catch(e){errEl.textContent='Erro de conexão. Tente de novo.';}
 }
+async function tryLogin(){return submitAuth();}
 async function logout(){try{await supa.auth.signOut();}catch(e){} location.reload();}
 async function loadMeses(){
   document.getElementById('userbar').textContent=USER_EMAIL;
@@ -140,7 +166,7 @@ async function loadMeses(){
   }catch(e){}
   render();
 }
-['email','pw'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();}));
+['email','pw'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();}));
 
 // ---------- parsing ----------
 const VAL=/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})([CD*])\s*$/;

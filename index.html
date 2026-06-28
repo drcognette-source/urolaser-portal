@@ -166,6 +166,7 @@ async function submitAuth(){
       if(error){errEl.textContent='E-mail ou senha incorretos. Primeiro acesso? clique no link abaixo.';return;}
       USER_EMAIL=data.user.email;
     }
+    try{localStorage.setItem('uro_email',email);}catch(e){}
     document.getElementById('login').style.display='none';
     await loadMeses();
   }catch(e){errEl.textContent='Erro de conexão. Tente de novo.';}
@@ -183,6 +184,15 @@ async function loadMeses(){
   render();
 }
 ['email','pw'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();}));
+async function initAuth(){
+  try{const le=localStorage.getItem('uro_email');if(le)document.getElementById('email').value=le;}catch(e){}
+  try{
+    const {data}=await supa.auth.getSession();
+    if(data&&data.session){USER_EMAIL=(data.session.user||{}).email||'';document.getElementById('login').style.display='none';await loadMeses();return;}
+  }catch(e){}
+  const em=document.getElementById('email');if(em.value){document.getElementById('pw').focus();}else{em.focus();}
+}
+initAuth();
 
 // ---------- parsing ----------
 const VAL=/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.]+,\d{2})([CD*])\s*$/;

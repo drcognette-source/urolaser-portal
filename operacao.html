@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urolaser · Operação</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  :root{--teal:#0E4D5C;--teal2:#15707E;--tealbg:#e8f3f4;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;
+        --ok:#1B5E20;--okbg:#e7f6e9;--warn:#8a5a00;--warnbg:#fff4dc;--bad:#B71C1C;--badbg:#fdecea;--info:#0D47A1;--infobg:#e6eefb}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45;font-size:14px}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
+  header.top{background:var(--teal);color:#fff;padding:14px 0}
+  header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:0}
+  .brand{font-size:21px;font-weight:bold;letter-spacing:.5px}
+  .brand small{display:block;font-size:11px;font-weight:normal;color:#cfe6ea;letter-spacing:0}
+  .hbtns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .who{color:#cfe6ea;font-size:12px}
+  button{font-family:inherit}
+  .btn{background:var(--teal);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:bold;cursor:pointer;font-size:13.5px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.light{background:#fff;color:var(--teal)}
+  .btn.ghost{background:transparent;color:#fff;border:1px solid #ffffff66}
+  .btn.sec{background:#eef3f5;color:var(--ink)}
+  .btn.small{padding:6px 10px;font-size:12.5px}
+  .btn.danger{background:var(--badbg);color:var(--bad)}
+  .btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--teal2);outline-offset:2px}
+  /* login */
+  #login{position:fixed;inset:0;background:linear-gradient(160deg,#0E4D5C,#103a45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  #login .box{background:#fff;border-radius:16px;padding:28px;width:340px;max-width:100%;text-align:center;box-shadow:0 20px 60px #0006}
+  #login h1{color:var(--teal);font-size:22px;margin-bottom:4px}
+  #login p{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+  #login input{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;font-size:15px;margin-bottom:10px;text-align:center}
+  #login button{width:100%}
+  #login .err{color:var(--bad);font-size:12.5px;min-height:16px;margin-top:8px}
+  #login .hint{color:#90a0aa;font-size:12px;margin-top:14px}
+  #login a{color:var(--teal);font-weight:bold;text-decoration:none}
+  /* tabs */
+  .tabs{display:flex;gap:6px;margin:4px 0 16px;flex-wrap:wrap}
+  .tab{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:bold;color:var(--muted)}
+  .tab.on{background:var(--teal);border-color:var(--teal);color:#fff}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .panel h2{font-size:16px;color:var(--teal);margin-bottom:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}}
+  .f{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .f label{font-size:12.5px;font-weight:bold;color:var(--ink)}
+  .f .hint{font-size:11.5px;color:var(--muted)}
+  input[type=text],input[type=tel],input[type=email],input[type=date],input[type=month],input[type=number],select,textarea{width:100%;padding:10px;border:1px solid #cfd9de;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink)}
+  textarea{min-height:60px}
+  .seg{display:flex;gap:8px;flex-wrap:wrap}
+  .seg label{border:1px solid #cfd9de;border-radius:8px;padding:9px 12px;cursor:pointer;font-size:13.5px;display:flex;gap:6px;align-items:center}
+  .seg label:has(input:checked){border-color:var(--teal);background:var(--tealbg);font-weight:bold}
+  .valbox{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--tealbg);border-radius:10px;padding:12px 14px;margin:14px 0}
+  .valbox .v{font-size:22px;font-weight:bold;color:var(--teal);font-variant-numeric:tabular-nums}
+  .valbox .m{font-size:12px;color:var(--muted)}
+  .msg{border-radius:8px;padding:10px 12px;font-size:13px;margin-top:10px}
+  .msg.err{background:var(--badbg);color:var(--bad)}
+  .msg.ok{background:var(--okbg);color:var(--ok)}
+  .msg.warn{background:var(--warnbg);color:var(--warn)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  /* lista */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .filters input{max-width:260px}
+  .filters select{max-width:220px}
+  .rows{display:flex;flex-direction:column}
+  .row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:6px 14px;padding:12px 4px;border-top:1px solid var(--line);cursor:pointer;align-items:center}
+  .row:first-child{border-top:0}
+  .row:hover{background:#fafcfc}
+  .row .n{font-weight:bold;overflow-wrap:anywhere}
+  .row .d{font-size:12.5px;color:var(--muted)}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+  @media(max-width:720px){.row{grid-template-columns:1fr}.chips{justify-content:flex-start}}
+  .chip{font-size:11.5px;font-weight:bold;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .c-ok{background:var(--okbg);color:var(--ok)} .c-wait{background:var(--warnbg);color:var(--warn)}
+  .c-info{background:var(--infobg);color:var(--info)} .c-off{background:#eef1f3;color:#7a8a96} .c-bad{background:var(--badbg);color:var(--bad)}
+  .empty{text-align:center;color:var(--muted);padding:34px 12px}
+  /* detalhe */
+  .ovl{position:fixed;inset:0;background:#0009;display:flex;align-items:flex-start;justify-content:center;z-index:60;padding:16px;overflow:auto}
+  .modal{background:#fff;border-radius:14px;max-width:760px;width:100%;margin:auto 0;box-shadow:0 20px 60px #0006}
+  .mhead{background:var(--teal);color:#fff;padding:14px 18px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .mhead h3{font-size:16px} .mhead .s{font-size:12.5px;color:#cfe6ea}
+  .mbody{padding:6px 18px 18px}
+  .step{border-top:1px solid var(--line);padding:14px 0}
+  .step:first-child{border-top:0}
+  .step h4{font-size:14px;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:4px 10px;font-size:13px}
+  .kv dt{color:var(--muted)} .kv dd{overflow-wrap:anywhere}
+  .copyrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px}
+  .copyrow .lab{font-size:11.5px;color:var(--muted);min-width:78px}
+  .copyrow .val{flex:1;font-family:"Courier New",monospace;font-size:13px;overflow-wrap:anywhere}
+  .chk{display:flex;flex-direction:column;gap:8px}
+  .chk label{display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:11px;color:var(--teal);text-transform:uppercase;letter-spacing:.3px}
+  th.num{text-align:right}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scroll{overflow-x:auto}
+  .note{font-size:11.5px;color:#90a0aa;text-align:center;margin:6px 0 24px}
+  .agora{border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:16px;display:flex;flex-direction:column;gap:10px;background:#fbfdfd}
+  .agora .lbl{font-size:12px;font-weight:bold;letter-spacing:.4px;text-transform:uppercase;color:var(--teal)}
+  .agora .opt{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px}
+  .agora .opt input{margin-top:3px;width:17px;height:17px}
+  .agora small{color:var(--muted);font-size:12px}
+  .hint2{color:var(--muted);font-size:12px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:12px}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .kpi .v{font-size:19px;font-weight:bold;color:var(--teal);margin-top:2px;font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:11.5px;color:var(--muted)}
+  h3.sec{font-size:13.5px;color:var(--teal);margin:18px 0 8px}
+  tr.tot td{font-weight:bold;border-top:2px solid var(--line)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h1>Urolaser</h1>
+    <p>Operação · cirurgias, contratos e notas</p>
+    <input id="email" type="email" placeholder="seu e-mail" autocomplete="username">
+    <input id="pw" type="password" placeholder="sua senha" autocomplete="current-password">
+    <button class="btn" id="loginBtn" onclick="submitAuth()">Entrar</button>
+    <div class="err" id="loginErr"></div>
+    <div class="hint" id="modeHint">Primeiro acesso? <a href="#" onclick="toggleMode();return false;">Criar minha senha</a></div>
+  </div>
+</div>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">UROLASER <small>Operação · cirurgias, contratos e notas</small></div>
+    <div class="hbtns">
+      <span class="who" id="who"></span>
+      <a class="btn ghost small" id="toPortal" href="index.html" hidden>Portal financeiro</a>
+      <button class="btn ghost small" onclick="logout()">Sair</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab on" data-tab="lista">Cirurgias</button>
+    <button class="tab" data-tab="nova">Nova cirurgia</button>
+    <button class="tab" data-tab="precos">Tabela de preços</button>
+    <button class="tab" data-tab="relat" id="tabRelat" hidden>Relatórios</button>
+  </div>
+
+  <!-- LISTA -->
+  <section id="tab-lista" class="panel">
+    <div class="filters">
+      <input type="text" id="busca" placeholder="Buscar paciente, CPF ou hospital">
+      <select id="filtro">
+        <option value="abertas">Em andamento</option>
+        <option value="todas">Todas</option>
+        <option value="sem_contrato">Contrato a enviar</option>
+        <option value="sem_pagamento">Aguardando pagamento</option>
+        <option value="sem_nota">Nota a emitir</option>
+      </select>
+    </div>
+    <div class="rows" id="rows"><div class="empty">Carregando…</div></div>
+  </section>
+
+  <!-- NOVA -->
+  <section id="tab-nova" class="panel" hidden>
+    <h2>Nova cirurgia</h2>
+    <form id="fNova" novalidate>
+      <div class="f" style="margin-bottom:12px">
+        <label>Equipamento</label>
+        <div class="seg">
+          <label><input type="radio" name="laser" value="60W" checked> Laser 60W itinerante</label>
+          <label><input type="radio" name="laser" value="100W"> Laser 100W · Hospital do Rim</label>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="f"><label for="proc">Procedimento</label><select id="proc"></select></div>
+        <div class="f" id="wrapSocio"><label for="socio">Cirurgião</label>
+          <select id="socio"><option value="nao">Não sócio da Urolaser</option><option value="sim">Sócio da Urolaser</option></select></div>
+        <div class="f" id="wrapForma"><label for="forma">Forma de pagamento</label>
+          <select id="forma"><option value="vista">À vista (PIX, TED ou dinheiro)</option><option value="3x">3x no cartão</option></select></div>
+        <div class="f" id="wrapTransp"><label for="transp">Transporte (R$)</label>
+          <input type="number" id="transp" min="0" step="0.01" value="0"><span class="hint">Só quando houver deslocamento do laser</span></div>
+      </div>
+      <div class="valbox"><div><div class="m">Valor do contrato</div><div class="v" id="vValor">R$ 0,00</div></div><div class="m" id="vNota"></div></div>
+
+      <div class="grid2">
+        <div class="f" style="grid-column:1/-1"><label for="nome">Nome completo do paciente</label><input type="text" id="nome" autocomplete="off"></div>
+        <div class="f"><label for="cpf">CPF</label><input type="text" id="cpf" inputmode="numeric" placeholder="000.000.000-00"></div>
+        <div class="f"><label for="whats">WhatsApp</label><input type="tel" id="whats" inputmode="tel" placeholder="(62) 99999-9999"><span class="hint">O contrato vai para este número</span></div>
+        <div class="f" style="grid-column:1/-1"><label for="pemail">E-mail do paciente (opcional)</label><input type="email" id="pemail"></div>
+        <div class="f"><label for="dcir">Data da cirurgia</label><input type="date" id="dcir"></div>
+        <div class="f"><label for="hosp">Hospital</label><input type="text" id="hosp" list="hospList"><datalist id="hospList"></datalist></div>
+        <div class="f" style="grid-column:1/-1"><label for="med">Médico que vai operar</label><input type="text" id="med" list="medList"><datalist id="medList"></datalist></div>
+        <div class="f" style="grid-column:1/-1"><label for="obs">Observação (opcional)</label><textarea id="obs"></textarea></div>
+      </div>
+
+      <div class="agora">
+        <div class="lbl">O que fazer agora</div>
+        <label class="opt"><input type="checkbox" id="agContrato" checked><span><b>Enviar o contrato pela ZapSign</b><br><small>O link vai para o WhatsApp do paciente assim que salvar.</small></span></label>
+        <label class="opt"><input type="checkbox" id="agPago"><span><b>O paciente já pagou</b><br><small>Registra o pagamento e já abre a nota fiscal para emitir.</small></span></label>
+        <div id="pagoAgora" hidden>
+          <div class="grid3">
+            <div class="f"><label for="naV">Valor recebido (R$)</label><input type="number" step="0.01" id="naV"></div>
+            <div class="f"><label for="naF">Forma</label><select id="naF"><option>PIX</option><option>TED</option><option>Dinheiro</option><option>Cartão 3x</option><option>Cartão à vista</option></select></div>
+            <div class="f"><label for="naD">Data do pagamento</label><input type="date" id="naD"></div>
+          </div>
+          <div class="f" style="margin-top:10px"><label for="naC">Comprovante (foto ou PDF)</label><input type="file" id="naC" accept="image/*,application/pdf"></div>
+        </div>
+        <small class="hint2">Pode deixar os dois desmarcados e fazer cada etapa depois, na lista de cirurgias.</small>
+      </div>
+      <div id="novaMsg"></div>
+      <div class="actions"><button class="btn" type="submit" id="btnSalvar">Salvar e enviar contrato</button></div>
+    </form>
+  </section>
+
+  <!-- PREÇOS -->
+  <section id="tab-precos" class="panel" hidden>
+    <h2>Tabela de preços</h2>
+    <p class="hint" id="precosHint" style="font-size:12.5px;color:var(--muted);margin-bottom:10px"></p>
+    <div class="scroll"><table id="tPrecos"></table></div>
+    <div id="precosMsg"></div>
+  </section>
+  <!-- RELATÓRIOS (sócios) -->
+  <section id="tab-relat" class="panel" hidden>
+    <h2>Relatórios por laser</h2>
+    <div class="filters">
+      <div class="f"><label for="rIni">De (mês da cirurgia)</label><input type="month" id="rIni"></div>
+      <div class="f"><label for="rFim">Até</label><input type="month" id="rFim"></div>
+      <div class="f"><label for="rLaser">Laser</label><select id="rLaser"><option value="">Os dois</option><option value="60W">60W itinerante</option><option value="100W">100W Hospital do Rim</option></select></div>
+      <div class="f" style="justify-content:flex-end"><button class="btn sec" id="rCsv">Baixar planilha (CSV)</button></div>
+    </div>
+    <div id="relat"></div>
+  </section>
+
+  <div class="note">Os dados ficam no servidor da Urolaser. O contrato assinado fica na ZapSign; a nota, no site da prefeitura.</div>
+</div>
+
+<div class="ovl" id="ovl" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+
+<script>
+const SUPABASE_URL='https://xxhwhkmsknleqqdozlwx.supabase.co';
+const SUPABASE_ANON='sb_publishable_LR6u6EzV9rcQyuoYnYF9rA_lmWt1o27';
+const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
+const NOTA_SITE='https://notaeletronica.com.br/goiania';
+let USER_EMAIL='', PAPEL=null, PRECOS=[], CIR=[];
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl=v=>(Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const dBR=iso=>iso?String(iso).slice(0,10).split('-').reverse().join('/'):'';
+const hoje=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
+const digits=s=>String(s||'').replace(/\D/g,'');
+const fmtCPF=s=>{const d=digits(s).slice(0,11);return d.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');};
+const fmtFone=s=>{const d=digits(s).slice(0,11);if(d.length<=10)return d.replace(/(\d{2})(\d{4})(\d{0,4})/,'($1) $2-$3').replace(/-$/,'');return d.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1) $2-$3');};
+function cpfValido(c){c=digits(c);if(c.length!==11||/^(\d)\1+$/.test(c))return false;
+  for(let t=9;t<11;t++){let s=0;for(let i=0;i<t;i++)s+=Number(c[i])*(t+1-i);if(((s*10)%11)%10!==Number(c[t]))return false;}return true;}
+function msg(el,kind,text){el.innerHTML=text?'<div class="msg '+kind+'">'+esc(text)+'</div>':'';}
+async function copiar(texto,btn){
+  try{await navigator.clipboard.writeText(texto);const o=btn.textContent;btn.textContent='Copiado';setTimeout(()=>btn.textContent=o,1400);}
+  catch(e){const t=document.createElement('textarea');t.value=texto;document.body.appendChild(t);t.select();try{document.execCommand('copy');btn.textContent='Copiado';}catch(_){}t.remove();}
+}
+async function log(cirurgia,acao,detalhe){try{await supa.from('op_eventos').insert({cirurgia,acao,detalhe:detalhe||null});}catch(e){}}
+
+/* ---------------- login ---------------- */
+let signupMode=false;
+function toggleMode(){
+  signupMode=!signupMode;
+  $('loginBtn').textContent=signupMode?'Criar senha e entrar':'Entrar';
+  $('pw').placeholder=signupMode?'crie uma senha (mín. 6)':'sua senha';
+  $('modeHint').innerHTML=signupMode?'Já tem senha? <a href="#" onclick="toggleMode();return false;">Entrar</a>'
+    :'Primeiro acesso? <a href="#" onclick="toggleMode();return false;">Criar minha senha</a>';
+  $('loginErr').textContent='';
+}
+async function submitAuth(){
+  const email=$('email').value.trim().toLowerCase(), pw=$('pw').value, err=$('loginErr');
+  if(!email||!pw){err.textContent='Informe e-mail e senha.';return;}
+  err.textContent=signupMode?'Criando seu acesso…':'Entrando…';
+  try{
+    if(signupMode){
+      if(pw.length<6){err.textContent='A senha precisa de ao menos 6 caracteres.';return;}
+      const {data,error}=await supa.auth.signUp({email,password:pw,options:{emailRedirectTo:location.origin+location.pathname}});
+      if(error){err.textContent=/autoriz/i.test(error.message)?'E-mail não autorizado. Fale com o Dr. Marcel.'
+        :(/registered|already/i.test(error.message)?'Você já tem cadastro. Clique em "Entrar".':'Erro: '+error.message);return;}
+      if(!data.session){err.textContent='Enviamos um link de confirmação para '+email+'. Abra o e-mail, confirme e depois entre aqui com a sua senha.';return;}
+    }else{
+      const {error}=await supa.auth.signInWithPassword({email,password:pw});
+      if(error){err.textContent=/confirm/i.test(error.message)?'Confirme primeiro o e-mail que enviamos para '+email+'.':'E-mail ou senha incorretos.';return;}
+    }
+    try{localStorage.setItem('uro_email',email);}catch(e){}
+    if(await ensureAAL2()) await entrar();
+  }catch(e){err.textContent='Erro de conexão. Tente de novo.';}
+}
+['email','pw'].forEach(id=>$(id).addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();}));
+async function ensureAAL2(){
+  try{const {data}=await supa.auth.mfa.getAuthenticatorAssuranceLevel();
+    if(data&&data.nextLevel==='aal2'&&data.currentLevel!=='aal2'){
+      const {data:fl}=await supa.auth.mfa.listFactors();const t=fl&&fl.totp&&fl.totp[0];
+      if(t){$('login').querySelector('.box').innerHTML='<h1>Urolaser</h1><p>Verificação em 2 passos</p><input id="mfa" inputmode="numeric" placeholder="código do app (6 dígitos)"><button class="btn" id="mfaBtn">Confirmar</button><div class="err" id="loginErr"></div>';
+        $('mfaBtn').onclick=async()=>{const {data:ch}=await supa.auth.mfa.challenge({factorId:t.id});const {error}=await supa.auth.mfa.verify({factorId:t.id,challengeId:ch.id,code:$('mfa').value.trim()});
+          if(error){$('loginErr').textContent='Código inválido.';return;} await entrar();};
+        return false;}}
+  }catch(e){}
+  return true;
+}
+async function logout(){try{await supa.auth.signOut();}catch(e){} location.reload();}
+async function entrar(){
+  const {data:u}=await supa.auth.getUser(); USER_EMAIL=(u.user||{}).email||'';
+  const {data:p,error}=await supa.rpc('meu_papel');
+  if(error||!p){$('login').querySelector('.box').innerHTML='<h1>Urolaser</h1><p>O e-mail '+esc(USER_EMAIL)+' não tem acesso à área de operação.</p><button class="btn" onclick="logout()">Sair</button>';$('login').hidden=false;$('login').style.display='flex';return;}
+  PAPEL=p; $('login').style.display='none';
+  $('who').textContent=USER_EMAIL+(PAPEL==='socio'?' · sócio':' · secretaria');
+  $('toPortal').hidden=PAPEL!=='socio'; $('tabRelat').hidden=PAPEL!=='socio';
+  await carregarPrecos(); await carregarCirurgias(); prepararNova();
+}
+(async()=>{
+  try{const le=localStorage.getItem('uro_email');if(le)$('email').value=le;}catch(e){}
+  const {data}=await supa.auth.getSession();
+  if(data&&data.session){if(await ensureAAL2())await entrar();return;}
+  ($('email').value?$('pw'):$('email')).focus();
+})();
+
+/* ---------------- abas ---------------- */
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>abrirAba(b.dataset.tab));
+function abrirAba(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  ['lista','nova','precos','relat'].forEach(x=>$('tab-'+x).hidden=x!==t); if(t==='relat')relatorio();}
+
+/* ---------------- preços ---------------- */
+async function carregarPrecos(){
+  const {data}=await supa.from('op_precos').select('*').order('ordem');
+  PRECOS=data||[]; desenharPrecos();
+}
+const preco=id=>PRECOS.find(p=>p.id===id);
+function desenharPrecos(){
+  const ed=PAPEL==='socio';
+  $('precosHint').textContent=ed?'Você é sócio: pode alterar valores, o texto da nota e o modelo de contrato de cada procedimento.':'Somente leitura. Alterações de preço são feitas pelos sócios.';
+  let h='<thead><tr><th>Laser</th><th>Procedimento</th><th class="num">À vista</th><th class="num">3x cartão</th><th class="num">Sócio</th><th>Contrato ZapSign</th>'+(ed?'<th></th>':'')+'</tr></thead><tbody>';
+  for(const p of PRECOS){
+    h+='<tr><td>'+esc(p.laser)+'</td><td>'+esc(p.procedimento)+'</td><td class="num">'+brl(p.valor_vista)+'</td><td class="num">'+(p.valor_3x?brl(p.valor_3x):'–')+'</td><td class="num">'+(p.valor_socio?brl(p.valor_socio):'–')+'</td><td>'+(p.zapsign_template?'<span class="chip c-ok">ligado</span>':'<span class="chip c-wait">falta ligar</span>')+'</td>'+(ed?'<td><button class="btn sec small" onclick="editarPreco(\''+esc(p.id)+'\')">Editar</button></td>':'')+'</tr>';
+  }
+  $('tPrecos').innerHTML=h+'</tbody>';
+}
+function editarPreco(id){
+  const p=preco(id);
+  abrirModal('<div class="mhead"><div><h3>'+esc(p.procedimento)+'</h3><div class="s">Laser '+esc(p.laser)+'</div></div><button class="btn ghost small" onclick="fecharModal()">Fechar</button></div><div class="mbody"><div class="step">'
+   +'<div class="grid3"><div class="f"><label>À vista (R$)</label><input type="number" step="0.01" id="pv" value="'+esc(p.valor_vista)+'"></div><div class="f"><label>3x cartão (R$)</label><input type="number" step="0.01" id="p3" value="'+esc(p.valor_3x??'')+'"><span class="hint">vazio = sem opção 3x</span></div><div class="f"><label>Sócio (R$)</label><input type="number" step="0.01" id="ps" value="'+esc(p.valor_socio??'')+'"><span class="hint">vazio = sem preço de sócio</span></div></div>'
+   +'<div class="f" style="margin-top:12px"><label>Texto da nota fiscal</label><textarea id="pd">'+esc(p.descricao_nota)+'</textarea><span class="hint">{HOSPITAL} e {DATA} são trocados pelos dados da cirurgia</span></div>'
+   +'<div class="f" style="margin-top:12px"><label>Token do modelo de contrato na ZapSign</label><input type="text" id="pt" value="'+esc(p.zapsign_template??'')+'"></div>'
+   +'<div class="f" style="margin-top:12px"><label>Campos do contrato</label><textarea id="pc" style="font-family:Courier New,monospace;min-height:120px">'+esc(JSON.stringify(p.campos_contrato||{},null,1))+'</textarea><span class="hint">Cada campo {{...}} do modelo e o dado que vai nele: paciente_nome, paciente_cpf, paciente_whats, paciente_email, data_cirurgia, hospital, medico, procedimento, laser, valor, transporte, total, forma_pagamento</span></div>'
+   +'<div id="pm"></div><div class="actions"><button class="btn" id="psv">Salvar</button></div></div></div>');
+  $('psv').onclick=async()=>{
+    let campos; try{campos=JSON.parse($('pc').value||'{}');}catch(e){msg($('pm'),'err','Os campos do contrato não estão num formato válido. Use {"{{NOME}}":"paciente_nome"}.');return;}
+    const n=v=>v===''?null:Number(v);
+    const {error}=await supa.from('op_precos').update({valor_vista:Number($('pv').value),valor_3x:n($('p3').value),valor_socio:n($('ps').value),descricao_nota:$('pd').value.trim(),zapsign_template:$('pt').value.trim()||null,campos_contrato:campos}).eq('id',id);
+    if(error){msg($('pm'),'err','Não foi possível salvar: '+error.message);return;}
+    await carregarPrecos(); fecharModal();
+  };
+}
+
+/* ---------------- nova cirurgia ---------------- */
+function laserSel(){return document.querySelector('input[name="laser"]:checked').value;}
+function prepararNova(){
+  $('dcir').min=hoje();
+  document.querySelectorAll('input[name="laser"]').forEach(r=>r.onchange=()=>{fillProc();});
+  ['proc','socio','forma','transp'].forEach(id=>$(id).addEventListener('change',calc));
+  $('transp').addEventListener('input',calc);
+  $('cpf').addEventListener('input',e=>e.target.value=fmtCPF(e.target.value));
+  $('whats').addEventListener('input',e=>e.target.value=fmtFone(e.target.value));
+  ['agContrato','agPago'].forEach(id=>$(id).addEventListener('change',rotuloSalvar));
+  $('naV').addEventListener('input',()=>$('naV').dataset.touched='1');
+  $('naD').value=hoje();
+  fillProc(); rotuloSalvar();
+  const hs=[...new Set(CIR.map(c=>c.hospital))].sort(), ms=[...new Set(CIR.map(c=>c.medico))].sort();
+  $('hospList').innerHTML=hs.map(h=>'<option value="'+esc(h)+'">').join('');
+  $('medList').innerHTML=ms.map(h=>'<option value="'+esc(h)+'">').join('');
+}
+function fillProc(){
+  const L=laserSel();
+  $('proc').innerHTML=PRECOS.filter(p=>p.laser===L&&p.ativo).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.procedimento)+'</option>').join('');
+  if(L==='100W'){$('hosp').value='Hospital do Rim';} else if($('hosp').value==='Hospital do Rim'){$('hosp').value='';}
+  $('wrapTransp').hidden=L!=='60W'; if(L!=='60W')$('transp').value=0;
+  calc();
+}
+function valorAtual(){
+  const p=preco($('proc').value); if(!p)return {v:0,nota:''};
+  $('wrapSocio').hidden=!p.valor_socio; $('wrapForma').hidden=!p.valor_3x;
+  if(p.valor_socio&&$('socio').value==='sim')return {v:Number(p.valor_socio),nota:'Valor de cirurgião sócio'};
+  if(p.valor_3x&&$('forma').value==='3x')return {v:Number(p.valor_3x),nota:'Parcelado em 3x no cartão'};
+  return {v:Number(p.valor_vista),nota:p.valor_3x?'À vista só por PIX, TED ou dinheiro':(p.laser==='60W'?'Transporte somado quando houver deslocamento':'')};
+}
+function rotuloSalvar(){
+  const c=$('agContrato').checked, pg=$('agPago').checked; $('pagoAgora').hidden=!pg;
+  $('btnSalvar').textContent=c&&pg?'Salvar, enviar contrato e abrir a nota':c?'Salvar e enviar contrato':pg?'Salvar e abrir a nota':'Salvar cirurgia';
+  calc();
+}
+function calc(){const {v,nota}=valorAtual(); const t=Number($('transp').value)||0;
+  if($('naV')&&!$('naV').dataset.touched)$('naV').value=(v+t).toFixed(2);
+  $('vValor').textContent=brl(v+t); $('vNota').textContent=t?('Procedimento '+brl(v)+' + transporte '+brl(t)):nota;}
+$('fNova').addEventListener('submit',async e=>{
+  e.preventDefault(); const m=$('novaMsg');
+  const nome=$('nome').value.trim().replace(/\s+/g,' '), cpf=$('cpf').value, whats=digits($('whats').value);
+  if(nome.split(' ').length<2)return msg(m,'err','Escreva o nome completo do paciente, com sobrenome.');
+  if(!cpfValido(cpf))return msg(m,'err','CPF inválido. Confira os 11 números.');
+  if(whats.length<10||whats.length>11)return msg(m,'err','WhatsApp inválido: use DDD + número, por exemplo (62) 99999-9999.');
+  if(!$('dcir').value)return msg(m,'err','Informe a data da cirurgia.');
+  if(!$('hosp').value.trim())return msg(m,'err','Informe o hospital.');
+  if(!$('med').value.trim())return msg(m,'err','Informe o médico que vai operar.');
+  const dup=CIR.find(c=>!c.cancelada&&digits(c.paciente_cpf)===digits(cpf)&&c.data_cirurgia===$('dcir').value);
+  if(dup&&!$('btnSalvar').dataset.ok){$('btnSalvar').dataset.ok='1';$('btnSalvar').textContent='Salvar mesmo assim';
+    return msg(m,'warn','Já existe uma cirurgia deste CPF nesta data ('+dup.hospital+'). Se for outra cirurgia, clique em "Salvar mesmo assim".');}
+  const querPago=$('agPago').checked, querContrato=$('agContrato').checked, fComp=$('naC').files[0];
+  if(querPago&&!(Number($('naV').value)>0))return msg(m,'err','Informe o valor recebido.');
+  if(fComp&&fComp.size>10*1024*1024)return msg(m,'err','O comprovante passa de 10 MB. Tire uma foto menor ou envie o PDF.');
+  const {v}=valorAtual(); const p=preco($('proc').value);
+  $('btnSalvar').disabled=true; msg(m,'ok','Salvando…');
+  const row={paciente_nome:nome.toUpperCase(),paciente_cpf:fmtCPF(cpf),paciente_whats:fmtFone(whats),paciente_email:$('pemail').value.trim()||null,
+    data_cirurgia:$('dcir').value,hospital:$('hosp').value.trim(),medico:$('med').value.trim(),preco_id:p.id,
+    cirurgiao_socio:!!(p.valor_socio&&$('socio').value==='sim'),forma_pagamento:(p.valor_3x&&$('forma').value==='3x')?'3x':'vista',
+    valor:v,transporte:Number($('transp').value)||0,observacao:$('obs').value.trim()||null,laser:p.laser,procedimento:p.procedimento};
+  const {data,error}=await supa.from('op_cirurgias').insert(row).select().single();
+  if(error){$('btnSalvar').disabled=false;rotuloSalvar();return msg(m,'err','Não foi possível salvar: '+error.message);}
+  await log(data.id,'cirurgia_criada',p.procedimento);
+  const avisos=[];
+  if(querPago){
+    let path=null;
+    if(fComp){path=data.id+'/'+Date.now()+'_'+fComp.name.replace(/[^\w.\-]/g,'_');
+      const up=await supa.storage.from('comprovantes').upload(path,fComp); if(up.error){path=null;avisos.push(['warn','Cirurgia salva, mas o comprovante não subiu. Anexe de novo no pagamento.']);}}
+    const pv=Number($('naV').value);
+    const r=await supa.from('op_cirurgias').update({pago:true,pago_valor:pv,pago_forma:$('naF').value,pago_em:$('naD').value||hoje(),comprovante_path:path}).eq('id',data.id);
+    if(r.error)avisos.push(['err','Cirurgia salva, mas o pagamento não foi registrado: '+r.error.message]); else await log(data.id,'pagamento_confirmado',brl(pv));
+  }
+  if(querContrato){
+    if(!p.zapsign_template)avisos.push(['warn','Cirurgia salva. O contrato não foi enviado porque este procedimento ainda não tem o modelo da ZapSign ligado.']);
+    else{const r=await enviarContrato(data.id); avisos.push(r.ok?['ok','Contrato enviado para o WhatsApp do paciente.']:['err','Cirurgia salva, mas o contrato não foi enviado: '+r.erro]);}
+  }
+  $('btnSalvar').disabled=false; delete $('btnSalvar').dataset.ok;
+  $('fNova').reset(); delete $('naV').dataset.touched; $('naD').value=hoje(); $('agContrato').checked=true; fillProc(); rotuloSalvar(); msg(m,'','');
+  await carregarCirurgias(); abrirAba('lista'); abrirCirurgia(data.id, querPago?'passo-nota':null);
+  avisos.forEach(([k,t])=>{const el=document.createElement('div');el.className='msg '+k;el.textContent=t;$('mMsg').appendChild(el);});
+});
+
+/* ---------------- lista ---------------- */
+async function carregarCirurgias(){
+  const {data,error}=await supa.from('op_cirurgias').select('*').order('data_cirurgia',{ascending:false}).limit(500);
+  if(error){$('rows').innerHTML='<div class="empty">Não foi possível carregar: '+esc(error.message)+'</div>';return;}
+  CIR=data||[]; desenharLista();
+}
+$('busca').addEventListener('input',desenharLista); $('filtro').addEventListener('change',desenharLista);
+function chipsDe(c){
+  if(c.cancelada)return '<span class="chip c-off">Cancelada</span>';
+  const ct={pendente:['c-wait','Contrato a enviar'],enviado:['c-info','Contrato enviado'],assinado:['c-ok','Contrato assinado'],recusado:['c-bad','Contrato recusado'],cancelado:['c-off','Contrato cancelado']}[c.contrato_status];
+  const pg=c.pago?['c-ok','Pago']:['c-wait','Aguardando pagamento'];
+  const nf=c.nota_numero?['c-ok','Nota '+esc(c.nota_numero)]:(c.pago?['c-wait','Nota a emitir']:['c-off','Nota']);
+  const ck=(c.chk_transporte&&c.chk_instrumentadora&&c.chk_fibra)?['c-ok','Checklist ok']:['c-off','Checklist'];
+  return [ct,pg,nf,ck].map(x=>'<span class="chip '+x[0]+'">'+x[1]+'</span>').join('');
+}
+function desenharLista(){
+  const q=$('busca').value.trim().toLowerCase(), f=$('filtro').value, qd=digits(q);
+  let L=CIR.filter(c=>{
+    if(q&&!(c.paciente_nome.toLowerCase().includes(q)||c.hospital.toLowerCase().includes(q)||(qd&&digits(c.paciente_cpf).includes(qd))))return false;
+    if(f==='todas')return true; if(c.cancelada)return false;
+    if(f==='abertas')return !(c.contrato_status==='assinado'&&c.pago&&c.nota_numero&&c.chk_transporte&&c.chk_instrumentadora&&c.chk_fibra);
+    if(f==='sem_contrato')return c.contrato_status==='pendente'||c.contrato_status==='recusado';
+    if(f==='sem_pagamento')return !c.pago; if(f==='sem_nota')return c.pago&&!c.nota_numero; return true;});
+  if(!L.length){$('rows').innerHTML='<div class="empty">'+(CIR.length?'Nenhuma cirurgia neste filtro.':'Nenhuma cirurgia cadastrada ainda. Use a aba "Nova cirurgia" para começar.')+'</div>';return;}
+  $('rows').innerHTML=L.map(c=>{const p={procedimento:c.procedimento,laser:c.laser};return '<div class="row" tabindex="0" data-id="'+c.id+'"><div><div class="n">'+esc(c.paciente_nome)+'</div><div class="d">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+'</div></div><div class="d">'+dBR(c.data_cirurgia)+' · '+esc(c.hospital)+'<br>'+brl(Number(c.valor)+Number(c.transporte||0))+'</div><div class="chips">'+chipsDe(c)+'</div></div>';}).join('');
+  $('rows').querySelectorAll('.row').forEach(r=>{r.onclick=()=>abrirCirurgia(r.dataset.id);r.onkeydown=e=>{if(e.key==='Enter')abrirCirurgia(r.dataset.id);};});
+}
+
+async function enviarContrato(id){
+  const {error}=await supa.functions.invoke('zapsign-enviar',{body:{id}});
+  if(!error)return {ok:true};
+  let t='não foi possível falar com a ZapSign.';try{const j=await error.context.json();t=j.erro||t;}catch(_){}
+  return {ok:false,erro:t};
+}
+/* ---------------- relatórios (sócios) ---------------- */
+function mesDe(iso){return String(iso||'').slice(0,7);}
+const MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const rotMes=m=>MESES[Number(m.slice(5,7))-1]+'/'+m.slice(2,4);
+function filtradas(){
+  const i=$('rIni').value, f=$('rFim').value, L=$('rLaser').value;
+  return CIR.filter(c=>!c.cancelada&&(!L||c.laser===L)&&(!i||mesDe(c.data_cirurgia)>=i)&&(!f||mesDe(c.data_cirurgia)<=f));
+}
+const totalDe=c=>Number(c.valor)+Number(c.transporte||0);
+function agrupa(lista,chave){const g={};lista.forEach(c=>{const k=chave(c);(g[k]=g[k]||[]).push(c);});return g;}
+function linhaResumo(nome,L){const contr=L.reduce((a,c)=>a+totalDe(c),0), rec=L.filter(c=>c.pago).reduce((a,c)=>a+Number(c.pago_valor||0),0);
+  return '<tr><td>'+esc(nome)+'</td><td class="num">'+L.length+'</td><td class="num">'+brl(contr)+'</td><td class="num">'+brl(rec)+'</td><td class="num">'+brl(contr-L.filter(c=>c.pago).reduce((a,c)=>a+totalDe(c),0))+'</td><td class="num">'+L.filter(c=>c.nota_numero).length+'</td><td class="num">'+brl(L.length?contr/L.length:0)+'</td></tr>';}
+const cab='<thead><tr><th></th><th class="num">Cirurgias</th><th class="num">Contratado</th><th class="num">Recebido</th><th class="num">A receber</th><th class="num">Notas</th><th class="num">Ticket médio</th></tr></thead>';
+function tabela(titulo,grupos,ordem){
+  const ks=Object.keys(grupos).sort(ordem||((a,b)=>grupos[b].length-grupos[a].length));
+  const todos=[].concat(...ks.map(k=>grupos[k]));
+  return '<h3 class="sec">'+titulo+'</h3><div class="scroll"><table>'+cab+'<tbody>'+ks.map(k=>linhaResumo(k,grupos[k])).join('')+(ks.length>1?linhaResumo('Total',todos).replace('<tr>','<tr class="tot">'):'')+'</tbody></table></div>';
+}
+function relatorio(){
+  if(!$('rIni').value){const d=new Date();d.setMonth(d.getMonth()-5);$('rIni').value=d.toISOString().slice(0,7);
+    const ult=CIR.reduce((m,c)=>mesDe(c.data_cirurgia)>m?mesDe(c.data_cirurgia):m,hoje().slice(0,7));$('rFim').value=ult;}
+  const L=filtradas();
+  if(!L.length){$('relat').innerHTML='<div class="empty">Nenhuma cirurgia no período.</div>';return;}
+  const contr=L.reduce((a,c)=>a+totalDe(c),0), pagos=L.filter(c=>c.pago), rec=pagos.reduce((a,c)=>a+Number(c.pago_valor||0),0);
+  const aRec=L.filter(c=>!c.pago);
+  let h='<div class="kpis">'
+   +'<div class="kpi"><div class="l">Cirurgias</div><div class="v">'+L.length+'</div><div class="s">60W: '+L.filter(c=>c.laser==='60W').length+' · 100W: '+L.filter(c=>c.laser==='100W').length+'</div></div>'
+   +'<div class="kpi"><div class="l">Contratado</div><div class="v">'+brl(contr)+'</div></div>'
+   +'<div class="kpi"><div class="l">Recebido</div><div class="v">'+brl(rec)+'</div><div class="s">'+pagos.length+' pagamentos</div></div>'
+   +'<div class="kpi"><div class="l">A receber</div><div class="v">'+brl(aRec.reduce((a,c)=>a+totalDe(c),0))+'</div><div class="s">'+aRec.length+' cirurgias</div></div>'
+   +'<div class="kpi"><div class="l">Notas emitidas</div><div class="v">'+L.filter(c=>c.nota_numero).length+'</div><div class="s">'+pagos.filter(c=>!c.nota_numero).length+' pagas sem nota</div></div>'
+   +'</div>';
+  h+=tabela('Por mês e laser',agrupa(L,c=>rotMes(mesDe(c.data_cirurgia))+' · '+c.laser),(a,b)=>{const ka=agrupa(L,c=>rotMes(mesDe(c.data_cirurgia))+' · '+c.laser);return mesDe(ka[a][0].data_cirurgia).localeCompare(mesDe(ka[b][0].data_cirurgia))||a.localeCompare(b);});
+  h+=tabela('Por laser',agrupa(L,c=>'Laser '+c.laser));
+  h+=tabela('Por procedimento',agrupa(L,c=>c.laser+' · '+c.procedimento));
+  h+=tabela('Por hospital',agrupa(L,c=>c.hospital));
+  h+=tabela('Por médico',agrupa(L,c=>c.medico));
+  if(aRec.length)h+='<h3 class="sec">A receber</h3><div class="scroll"><table><thead><tr><th>Paciente</th><th>Cirurgia</th><th>Laser</th><th>Hospital</th><th class="num">Valor</th></tr></thead><tbody>'
+    +aRec.sort((a,b)=>a.data_cirurgia.localeCompare(b.data_cirurgia)).map(c=>'<tr><td>'+esc(c.paciente_nome)+'</td><td>'+dBR(c.data_cirurgia)+'</td><td>'+esc(c.laser)+'</td><td>'+esc(c.hospital)+'</td><td class="num">'+brl(totalDe(c))+'</td></tr>').join('')+'</tbody></table></div>';
+  $('relat').innerHTML=h;
+}
+['rIni','rFim','rLaser'].forEach(id=>$(id).addEventListener('change',relatorio));
+$('rCsv').addEventListener('click',()=>{
+  const L=filtradas(), q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const head=['Data cirurgia','Laser','Procedimento','Paciente','CPF','Hospital','Médico','Valor','Transporte','Total','Contrato','Pago','Valor recebido','Forma','Data pagamento','Nota','Data nota'];
+  const rows=L.map(c=>[dBR(c.data_cirurgia),c.laser,c.procedimento,c.paciente_nome,c.paciente_cpf,c.hospital,c.medico,String(c.valor).replace('.',','),String(c.transporte||0).replace('.',','),totalDe(c).toFixed(2).replace('.',','),c.contrato_status,c.pago?'sim':'não',c.pago_valor?String(c.pago_valor).replace('.',','):'',c.pago_forma||'',dBR(c.pago_em),c.nota_numero||'',dBR(c.nota_em)]);
+  const csv='\ufeff'+[head,...rows].map(r=>r.map(q).join(';')).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='urolaser_cirurgias_'+($('rLaser').value||'todos')+'_'+$('rIni').value+'_a_'+$('rFim').value+'.csv';a.click();
+});
+
+/* ---------------- detalhe ---------------- */
+function abrirModal(h){$('modal').innerHTML=h;$('ovl').hidden=false;}
+function fecharModal(){$('ovl').hidden=true;$('modal').innerHTML='';}
+$('ovl').addEventListener('click',e=>{if(e.target.id==='ovl')fecharModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('ovl').hidden)fecharModal();});
+async function salvar(id,campos,acao,det){
+  const {data,error}=await supa.from('op_cirurgias').update(campos).eq('id',id).select().single();
+  if(error){alertModal('Não foi possível salvar: '+error.message);return null;}
+  if(acao)await log(id,acao,det);
+  const i=CIR.findIndex(c=>c.id===id); if(i>=0)CIR[i]=data; desenharLista(); return data;
+}
+function alertModal(t){const el=$('mMsg');if(el)msg(el,'err',t);}
+function descricaoNota(c){const p=preco(c.preco_id)||{};
+  return String(p.descricao_nota||'REFERENTE AO EQUIPAMENTO E FIBRA LASER UTILIZADO NA CIRURGIA NO HOSPITAL {HOSPITAL}.')
+    .replace('{HOSPITAL}',String(c.hospital).toUpperCase().replace(/^HOSPITAL\s+/,'')).replace('{DATA}',dBR(c.data_cirurgia));}
+function abrirCirurgia(id,foco){
+  const c=CIR.find(x=>x.id===id); if(!c)return; const p=Object.assign({},preco(c.preco_id)||{},{procedimento:c.procedimento,laser:c.laser});
+  const total=Number(c.valor)+Number(c.transporte||0);
+  const ctxt={pendente:'Ainda não enviado',enviado:'Enviado pelo WhatsApp, aguardando assinatura',assinado:'Assinado pelo paciente',recusado:'O paciente recusou a assinatura',cancelado:'Cancelado na ZapSign'}[c.contrato_status];
+  let h='<div class="mhead"><div><h3>'+esc(c.paciente_nome)+'</h3><div class="s">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+' · '+dBR(c.data_cirurgia)+'</div></div><button class="btn ghost small" onclick="fecharModal()">Fechar</button></div><div class="mbody"><div id="mMsg"></div>';
+  h+='<div class="step"><h4>Dados</h4><dl class="kv"><dt>CPF</dt><dd>'+esc(c.paciente_cpf)+'</dd><dt>WhatsApp</dt><dd>'+esc(c.paciente_whats)+'</dd>'+(c.paciente_email?'<dt>E-mail</dt><dd>'+esc(c.paciente_email)+'</dd>':'')+'<dt>Hospital</dt><dd>'+esc(c.hospital)+'</dd><dt>Médico</dt><dd>'+esc(c.medico)+(c.cirurgiao_socio?' (sócio)':'')+'</dd><dt>Valor</dt><dd>'+brl(c.valor)+(Number(c.transporte)?' + transporte '+brl(c.transporte):'')+' · '+(c.forma_pagamento==='3x'?'3x no cartão':'à vista')+'</dd>'+(c.observacao?'<dt>Observação</dt><dd>'+esc(c.observacao)+'</dd>':'')+'</dl></div>';
+  // contrato
+  h+='<div class="step"><h4>Contrato <span class="chip '+({assinado:'c-ok',enviado:'c-info',recusado:'c-bad'}[c.contrato_status]||'c-wait')+'">'+esc(ctxt)+'</span></h4>';
+  if(c.cancelada){h+='<p class="hint">Cirurgia cancelada.</p>';}
+  else if(c.contrato_status==='pendente'||c.contrato_status==='recusado'||c.contrato_status==='cancelado'){
+    h+=(p.zapsign_template?'<p style="font-size:13px">O contrato de <b>'+esc(p.procedimento)+'</b> vai pelo WhatsApp para <b>'+esc(c.paciente_whats)+'</b>. Confira o número antes de enviar.</p>':'<div class="msg warn">Este procedimento ainda não tem o modelo de contrato ligado. Enquanto isso, envie pela ZapSign como hoje e marque abaixo.</div>')
+      +'<div class="actions"><button class="btn" id="bEnv" '+(p.zapsign_template?'':'disabled')+'>Enviar contrato pelo WhatsApp</button><button class="btn sec" id="bManual">Já enviei pela ZapSign</button></div>';
+  }else if(c.contrato_status==='enviado'){
+    h+='<p style="font-size:13px">Enviado em '+dBR(c.contrato_em)+'. O status muda sozinho quando o paciente assinar.</p><div class="actions">'+(c.contrato_link?'<button class="btn sec small" id="bLink">Copiar link de assinatura</button>':'')+'<button class="btn sec small" id="bAss">Marcar como assinado</button></div>';
+  }
+  h+='</div>';
+  // pagamento
+  h+='<div class="step"><h4>Pagamento <span class="chip '+(c.pago?'c-ok':'c-wait')+'">'+(c.pago?'Pago':'Aguardando')+'</span></h4>';
+  if(c.pago){h+='<dl class="kv"><dt>Valor recebido</dt><dd>'+brl(c.pago_valor)+'</dd><dt>Forma</dt><dd>'+esc(c.pago_forma)+'</dd><dt>Data</dt><dd>'+dBR(c.pago_em)+'</dd><dt>Comprovante</dt><dd>'+(c.comprovante_path?'<button class="btn sec small" id="bVerComp">Abrir comprovante</button>':'não anexado')+'</dd></dl>';}
+  else if(!c.cancelada){h+='<div class="grid3"><div class="f"><label for="pgV">Valor recebido (R$)</label><input type="number" step="0.01" id="pgV" value="'+total.toFixed(2)+'"></div><div class="f"><label for="pgF">Forma</label><select id="pgF"><option>PIX</option><option>TED</option><option>Dinheiro</option><option>Cartão 3x</option><option>Cartão à vista</option></select></div><div class="f"><label for="pgD">Data do pagamento</label><input type="date" id="pgD" value="'+hoje()+'"></div></div><div class="f" style="margin-top:10px"><label for="pgC">Comprovante (foto ou PDF)</label><input type="file" id="pgC" accept="image/*,application/pdf"></div><div class="actions"><button class="btn" id="bPago">Confirmar pagamento</button></div>';}
+  h+='</div>';
+  // nota
+  const desc=descricaoNota(c), valNota=Number(c.pago_valor||total).toFixed(2).replace('.',',');
+  h+='<div class="step" id="passo-nota"><h4>Nota fiscal <span class="chip '+(c.nota_numero?'c-ok':(c.pago?'c-wait':'c-off'))+'">'+(c.nota_numero?'Nota '+esc(c.nota_numero):(c.pago?'A emitir':'Depois do pagamento'))+'</span></h4>';
+  if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>';}
+  else if(c.pago&&!c.cancelada){
+    h+='<p style="font-size:13px">Abra o site da nota, entre com o login da Uro Laser e use os dados abaixo. Classificação de sempre: Medicina 04.01.01, ISS 3,5% não retido, federais não retidos.</p>'
+      +'<div class="copyrow"><span class="lab">CPF</span><span class="val">'+esc(c.paciente_cpf)+'</span><button class="btn sec small" data-copy="'+esc(digits(c.paciente_cpf))+'">Copiar</button></div>'
+      +'<div class="copyrow"><span class="lab">Valor</span><span class="val">'+esc(valNota)+'</span><button class="btn sec small" data-copy="'+esc(valNota)+'">Copiar</button></div>'
+      +'<div class="copyrow"><span class="lab">Descrição</span><span class="val">'+esc(desc)+'</span><button class="btn sec small" data-copy="'+esc(desc)+'">Copiar</button></div>'
+      +'<div class="actions"><a class="btn sec" href="'+NOTA_SITE+'" target="_blank" rel="noopener">Abrir site da nota</a></div>'
+      +'<div class="grid2" style="margin-top:12px"><div class="f"><label for="nfN">Número da nota emitida</label><input type="text" id="nfN" inputmode="numeric"></div><div class="f"><label for="nfD">Data de emissão</label><input type="date" id="nfD" value="'+hoje()+'"></div></div><div class="actions"><button class="btn" id="bNota">Registrar nota</button></div>';
+  }
+  h+='</div>';
+  // checklist
+  h+='<div class="step"><h4>Checklist</h4><div class="chk">'
+    +'<label><input type="checkbox" id="k1" '+(c.chk_transporte?'checked':'')+'> Transporte do laser agendado'+(p.laser==='100W'?' (não se aplica no Hospital do Rim)':'')+'</label>'
+    +'<label><input type="checkbox" id="k2" '+(c.chk_instrumentadora?'checked':'')+'> Instrumentadora da Urolaser confirmada</label>'
+    +'<label><input type="checkbox" id="k3" '+(c.chk_fibra?'checked':'')+'> Fibra conferida (usos restantes)</label></div></div>';
+  if(!c.cancelada)h+='<div class="step"><div class="actions"><button class="btn danger small" id="bCanc">Cancelar esta cirurgia</button></div></div>';
+  h+='</div>';
+  abrirModal(h);
+  if(foco&&$(foco))setTimeout(()=>$(foco).scrollIntoView({block:'start'}),50);
+  const M=$('modal');
+  M.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copiar(b.dataset.copy,b));
+  const on=(i,f)=>{const el=$(i);if(el)el.onclick=f;};
+  on('bEnv',async()=>{const b=$('bEnv');b.disabled=true;b.textContent='Enviando…';
+    const r=await enviarContrato(c.id);
+    if(!r.ok){msg($('mMsg'),'err','Não foi possível enviar: '+r.erro);b.disabled=false;b.textContent='Enviar contrato pelo WhatsApp';return;}
+    await carregarCirurgias(); abrirCirurgia(c.id); msg($('mMsg'),'ok','Contrato enviado para o WhatsApp do paciente.');});
+  on('bManual',async()=>{if(await salvar(c.id,{contrato_status:'enviado',contrato_em:new Date().toISOString()},'contrato_enviado_manual'))abrirCirurgia(c.id);});
+  on('bAss',async()=>{if(await salvar(c.id,{contrato_status:'assinado'},'contrato_assinado_manual'))abrirCirurgia(c.id);});
+  on('bLink',function(){copiar(c.contrato_link,this);});
+  on('bPago',async()=>{
+    const v=Number($('pgV').value); if(!(v>0))return msg($('mMsg'),'err','Informe o valor recebido.');
+    const b=$('bPago'); b.disabled=true; b.textContent='Salvando…';
+    let path=null; const f=$('pgC').files[0];
+    if(f){if(f.size>10*1024*1024){b.disabled=false;b.textContent='Confirmar pagamento';return msg($('mMsg'),'err','O arquivo passa de 10 MB. Tire uma foto menor ou envie o PDF.');}
+      path=c.id+'/'+Date.now()+'_'+f.name.replace(/[^\w.\-]/g,'_');
+      const up=await supa.storage.from('comprovantes').upload(path,f);
+      if(up.error){b.disabled=false;b.textContent='Confirmar pagamento';return msg($('mMsg'),'err','Não foi possível enviar o comprovante: '+up.error.message);}}
+    if(await salvar(c.id,{pago:true,pago_valor:v,pago_forma:$('pgF').value,pago_em:$('pgD').value,comprovante_path:path},'pagamento_confirmado',brl(v)))abrirCirurgia(c.id,'passo-nota');});
+  on('bVerComp',async()=>{const {data,error}=await supa.storage.from('comprovantes').createSignedUrl(c.comprovante_path,300);
+    if(error)return msg($('mMsg'),'err','Não foi possível abrir o comprovante.'); window.open(data.signedUrl,'_blank','noopener');});
+  on('bNota',async()=>{const n=digits($('nfN').value); if(!n)return msg($('mMsg'),'err','Informe o número da nota emitida.');
+    const dup=CIR.find(x=>x.id!==c.id&&x.nota_numero===n); if(dup)return msg($('mMsg'),'err','A nota '+n+' já está registrada para '+dup.paciente_nome+'. Confira o número.');
+    if(await salvar(c.id,{nota_numero:n,nota_em:$('nfD').value},'nota_registrada',n))abrirCirurgia(c.id);});
+  [['k1','chk_transporte'],['k2','chk_instrumentadora'],['k3','chk_fibra']].forEach(([i,col])=>{$(i).onchange=e=>salvar(c.id,{[col]:e.target.checked},'checklist',col+'='+e.target.checked);});
+  on('bCanc',function(){const b=this; if(!b.dataset.ok){b.dataset.ok='1';b.textContent='Confirmar cancelamento';msg($('mMsg'),'warn','Clique de novo em "Confirmar cancelamento" para cancelar. O registro continua guardado.');return;}
+    salvar(c.id,{cancelada:true},'cirurgia_cancelada').then(r=>{if(r)fecharModal();});});
+}
+</script>
+</body>
+</html>

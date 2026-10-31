@@ -99,6 +99,7 @@
       <button class="btn ghost" onclick="relatorioContador()" title="Relatório do contador em Excel (entradas, saídas, distribuição por sócio mês a mês)">📊 Excel</button>
       <button class="btn ghost" onclick="relatorioContadorPDF()" title="Relatório do contador em PDF (entradas, saídas, distribuição por sócio mês a mês)">📑 Contador</button>
       <button class="btn ghost" onclick="window.print()">PDF</button>
+      <a class="btn ghost" href="operacao.html" style="text-decoration:none" title="Cirurgias, contratos e notas (área da secretária)">Operação</a>
       <button class="btn ghost" onclick="backupJSON()">Backup</button>
       <button class="btn ghost" onclick="mfaEnroll()">2FA</button>
       <button class="btn ghost" onclick="logout()">Sair</button>
@@ -179,6 +180,8 @@ async function submitAuth(){
 async function tryLogin(){return submitAuth();}
 async function logout(){try{await supa.auth.signOut();}catch(e){} location.reload();}
 async function loadMeses(){
+  try{const {data:pp}=await supa.rpc('meu_papel'); if(pp==='secretaria'){location.replace('operacao.html');return;}}catch(e){}
+  await carregarOperacao();
   document.getElementById('userbar').textContent=USER_EMAIL;
   try{const rr=await supa.from('regras_categoria').select('*');RULES=rr.data||[];}catch(e){RULES=[];}
   try{
@@ -198,6 +201,50 @@ async function initAuth(){
   }catch(e){}
   const em=document.getElementById('email');if(em.value){document.getElementById('pw').focus();}else{em.focus();}
 }
+
+// ---------- integração com a Operação (cirurgias, contratos, notas) ----------
+let OP_CIR=null;
+async function carregarOperacao(){
+  try{const {data,error}=await supa.from('op_cirurgias').select('id,data_cirurgia,laser,procedimento,paciente_nome,hospital,valor,transporte,pago,pago_valor,pago_forma,pago_em,nota_numero,cancelada');
+    OP_CIR=error?null:(data||[]);}catch(e){OP_CIR=null;}
+}
+function renderOperacao(){
+  const dash=document.getElementById('dash'); if(!dash||!OP_CIR)return;
+  const old=document.getElementById('opPanel'); if(old)old.remove();
+  const L=OP_CIR.filter(c=>!c.cancelada); const box=document.createElement('div'); box.id='opPanel';
+  if(!L.length){box.innerHTML='<div class="panel"><h2>Cirurgias por laser (área Operação)</h2><div class="empty">Nenhuma cirurgia cadastrada ainda na <a href="operacao.html">área Operação</a>.</div></div>';dash.appendChild(box);return;}
+  const tot=c=>Number(c.valor)+Number(c.transporte||0);
+  const meses=[...new Set(L.map(c=>String(c.pago_em||c.data_cirurgia).slice(0,7)))].sort().slice(-12);
+  const rot=m=>LAB[ORDER[Number(m.slice(5,7))-1]]+'/'+m.slice(2,4);
+  const soma=(f)=>meses.map(m=>L.filter(c=>f(c,m)).reduce((a,c)=>a+Number(c.pago_valor||0),0));
+  const rec60=soma((c,m)=>c.pago&&c.laser==='60W'&&String(c.pago_em).slice(0,7)===m);
+  const rec100=soma((c,m)=>c.pago&&c.laser==='100W'&&String(c.pago_em).slice(0,7)===m);
+  const n=(lz,m)=>L.filter(c=>c.laser===lz&&String(c.data_cirurgia).slice(0,7)===m).length;
+  const aRec=L.filter(c=>!c.pago);
+  // conferência com o extrato: PIX/TED/dinheiro com crédito de mesmo valor até 5 dias depois
+  const ext=[]; Object.values(DB).forEach(m=>{if(!m||!m.txs||ORDER.indexOf(m.mes)<0)return; const mm=String(ORDER.indexOf(m.mes)+1).padStart(2,'0');
+    m.txs.forEach(t=>{if(t.val>0&&t.dia)ext.push({d:m.ano+'-'+mm+'-'+t.dia.slice(0,2),v:t.val});});});
+  const mesesExt=new Set(ext.map(e=>e.d.slice(0,7)));
+  const conferir=L.filter(c=>c.pago&&c.pago_em&&mesesExt.has(String(c.pago_em).slice(0,7))&&!/cart/i.test(c.pago_forma||''));
+  const achou=c=>ext.some(e=>Math.abs(e.v-Number(c.pago_valor))<0.01&&(Date.parse(e.d)-Date.parse(c.pago_em))/864e5>=-1&&(Date.parse(e.d)-Date.parse(c.pago_em))/864e5<=5);
+  const faltam=conferir.filter(c=>!achou(c));
+  let h='<div class="panel"><h2>Cirurgias por laser (área Operação)</h2><div class="scroll"><table><thead><tr><th>Indicador</th>'+meses.map(m=>'<th>'+rot(m)+'</th>').join('')+'<th>Total</th></tr></thead><tbody>';
+  const linha=(nome,vals,fmt)=>'<tr><td>'+nome+'</td>'+vals.map(v=>'<td>'+fmt(v)+'</td>').join('')+'<td><b>'+fmt(vals.reduce((a,b)=>a+b,0))+'</b></td></tr>';
+  h+=linha('Cirurgias laser 60W',meses.map(m=>n('60W',m)),v=>v);
+  h+=linha('Cirurgias laser 100W',meses.map(m=>n('100W',m)),v=>v);
+  h+=linha('Recebido laser 60W',rec60,brl);
+  h+=linha('Recebido laser 100W',rec100,brl);
+  h+=linha('Recebido total',rec60.map((v,i)=>v+rec100[i]),brl);
+  h+='</tbody></table></div><div style="padding:10px 14px;font-size:12.5px">'
+    +'<b>A receber:</b> '+brl(aRec.reduce((a,c)=>a+tot(c),0))+' em '+aRec.length+' cirurgia(s) · '
+    +'<b>Conferência com o extrato:</b> '+(conferir.length?(conferir.length-faltam.length)+' de '+conferir.length+' pagamentos (PIX, TED, dinheiro) encontrados no Sicoob':'sem extrato carregado nos meses dos pagamentos')
+    +(faltam.length?'<div style="margin-top:6px;color:var(--rtx)">Não encontrados no extrato: '+faltam.map(c=>c.paciente_nome+' '+brl(c.pago_valor)+' em '+String(c.pago_em).split('-').reverse().join('/')).join('; ')+'</div>':'')
+    +'<div style="margin-top:6px;color:var(--muted)">Pagamentos em cartão entram pela maquininha, líquidos de taxa, e não são conferidos aqui. Detalhes e relatórios por laser na <a href="operacao.html">área Operação</a>.</div></div></div>';
+  box.innerHTML=h; dash.appendChild(box);
+}
+const _renderBase=render;
+render=function(){_renderBase.apply(this,arguments);renderOperacao();};
+
 initAuth();
 
 // ---------- parsing ----------

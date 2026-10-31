@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Urolaser · Operação</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nf-urolaser.js?v=1"></script>
+<script src="nf-urolaser.js?v=2"></script>
 <style>
   :root{--teal:#0E4D5C;--teal2:#15707E;--tealbg:#e8f3f4;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;
         --ok:#1B5E20;--okbg:#e7f6e9;--warn:#8a5a00;--warnbg:#fff4dc;--bad:#B71C1C;--badbg:#fdecea;--info:#0D47A1;--infobg:#e6eefb}
@@ -45,7 +45,8 @@
   .panel h2{font-size:16px;color:var(--teal);margin-bottom:12px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  @media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}}
+  h3.sub{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:20px 0 8px;border-top:1px solid var(--line,#e3e6ea);padding-top:14px}
+  @media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}.grid3 .f{grid-column:auto!important}}
   .f{display:flex;flex-direction:column;gap:4px;min-width:0}
   .f label{font-size:12.5px;font-weight:bold;color:var(--ink)}
   .f .hint{font-size:11.5px;color:var(--muted)}
@@ -180,26 +181,54 @@
         </div>
       </div>
       <div class="grid2">
-        <div class="f"><label for="proc">Procedimento</label><select id="proc"></select></div>
-        <div class="f" id="wrapSocio"><label for="socio">Cirurgião</label>
-          <select id="socio"><option value="nao">Não sócio da Urolaser</option><option value="sim">Sócio da Urolaser</option></select></div>
-        <div class="f" id="wrapForma"><label for="forma">Forma de pagamento</label>
-          <select id="forma"><option value="vista">À vista (PIX, TED ou dinheiro)</option><option value="3x">3x no cartão</option></select></div>
+        <div class="f"><label for="proc">Procedimento (modelo de contrato)</label><select id="proc"></select></div>
         <div class="f" id="wrapTransp"><label for="transp">Transporte (R$)</label>
           <input type="number" id="transp" min="0" step="0.01" value="0"><span class="hint">Só quando houver deslocamento do laser</span></div>
       </div>
-      <div class="valbox"><div><div class="m">Valor do contrato</div><div class="v" id="vValor">R$ 0,00</div></div><div class="m" id="vNota"></div></div>
 
-      <div class="grid2">
+      <h3 class="sub">Paciente</h3>
+      <div class="grid3">
         <div class="f" style="grid-column:1/-1"><label for="nome">Nome completo do paciente</label><input type="text" id="nome" autocomplete="off"></div>
-        <div class="f"><label for="cpf">CPF</label><input type="text" id="cpf" inputmode="numeric" placeholder="000.000.000-00"></div>
-        <div class="f"><label for="whats">WhatsApp</label><input type="tel" id="whats" inputmode="tel" placeholder="(62) 99999-9999"><span class="hint">O contrato vai para este número</span></div>
-        <div class="f" style="grid-column:1/-1"><label for="pemail">E-mail do paciente (opcional)</label><input type="email" id="pemail"></div>
-        <div class="f"><label for="dcir">Data da cirurgia</label><input type="date" id="dcir"></div>
-        <div class="f"><label for="hosp">Hospital</label><input type="text" id="hosp" list="hospList"><datalist id="hospList"></datalist></div>
-        <div class="f" style="grid-column:1/-1"><label for="med">Médico que vai operar</label><input type="text" id="med" list="medList"><datalist id="medList"></datalist></div>
-        <div class="f" style="grid-column:1/-1"><label for="obs">Observação (opcional)</label><textarea id="obs"></textarea></div>
+        <div class="f"><label for="cpf">CPF do paciente</label><input type="text" id="cpf" inputmode="numeric" placeholder="000.000.000-00"></div>
+        <div class="f"><label for="nasc">Nascimento</label><input type="date" id="nasc"></div>
+        <div class="f"><label for="whats">WhatsApp do paciente</label><input type="tel" id="whats" inputmode="tel" placeholder="(62) 99999-9999"></div>
       </div>
+
+      <h3 class="sub">Quem assina o contrato</h3>
+      <div class="grid2">
+        <div class="f"><label for="qual">Contratante</label>
+          <select id="qual"><option>Paciente</option><option>Responsável financeiro</option><option>Médico assistente</option></select>
+          <span class="hint">O link de assinatura vai para o WhatsApp do contratante</span></div>
+        <div class="f"><label for="pemail">E-mail do contratante</label><input type="email" id="pemail"></div>
+      </div>
+      <div class="grid3" id="wrapContr" hidden style="margin-top:12px">
+        <div class="f" style="grid-column:1/-1"><label for="cnome">Nome completo do contratante</label><input type="text" id="cnome" autocomplete="off"></div>
+        <div class="f"><label for="ccpf">CPF do contratante</label><input type="text" id="ccpf" inputmode="numeric" placeholder="000.000.000-00"></div>
+        <div class="f"><label for="cwhats">WhatsApp do contratante</label><input type="tel" id="cwhats" inputmode="tel" placeholder="(62) 99999-9999"></div>
+      </div>
+      <div class="f" style="margin-top:12px"><label for="cend">Endereço do contratante</label><input type="text" id="cend" placeholder="Rua, número, bairro, cidade/UF, CEP"></div>
+
+      <h3 class="sub">Cirurgia</h3>
+      <div class="grid3">
+        <div class="f"><label for="dcir">Data</label><input type="date" id="dcir"></div>
+        <div class="f"><label for="hora">Horário</label><input type="time" id="hora"></div>
+        <div class="f"><label for="hosp">Hospital</label><input type="text" id="hosp" list="hospList"><datalist id="hospList"></datalist></div>
+        <div class="f" style="grid-column:span 2"><label for="med">Médico que vai operar</label><input type="text" id="med" list="medList"><datalist id="medList"></datalist></div>
+        <div class="f"><label for="crm">CRM do médico</label><input type="text" id="crm" placeholder="CRM-GO 12345"></div>
+        <div class="f" style="grid-column:span 2"><label for="inome">Instrumentadora</label><input type="text" id="inome" list="instList"><datalist id="instList"></datalist></div>
+        <div class="f"><label for="ihon">Honorários da instrumentadora (R$)</label><input type="number" id="ihon" min="0" step="0.01"></div>
+      </div>
+
+      <h3 class="sub">Pagamento previsto no contrato</h3>
+      <div class="grid3">
+        <div class="f"><label for="forma">Forma de pagamento</label>
+          <select id="forma"><option>PIX</option><option>Transferência</option><option>Cartão de débito</option><option>Cartão de crédito</option></select></div>
+        <div class="f" id="wrapParc"><label for="parc">Parcelas</label><select id="parc"></select></div>
+        <div class="f" id="wrapTaxa"><label for="taxa">Taxas do cartão (R$)</label><input type="number" id="taxa" min="0" step="0.01" value="0"></div>
+        <div class="f"><label for="dlim">Data limite do pagamento</label><input type="date" id="dlim"><span class="hint">Se vazio, a data da cirurgia</span></div>
+      </div>
+      <div class="valbox"><div><div class="m">Valor final do contrato</div><div class="v" id="vValor">R$ 0,00</div></div><div class="m" id="vNota"></div></div>
+      <div class="f" style="margin-top:12px"><label for="obs">Observação interna (opcional, não vai no contrato)</label><textarea id="obs"></textarea></div>
 
       <div class="agora">
         <div class="lbl">O que fazer agora</div>
@@ -352,7 +381,7 @@ function editarPreco(id){
    +'<div class="grid3"><div class="f"><label>À vista (R$)</label><input type="number" step="0.01" id="pv" value="'+esc(p.valor_vista)+'"></div><div class="f"><label>3x cartão (R$)</label><input type="number" step="0.01" id="p3" value="'+esc(p.valor_3x??'')+'"><span class="hint">vazio = sem opção 3x</span></div><div class="f"><label>Sócio (R$)</label><input type="number" step="0.01" id="ps" value="'+esc(p.valor_socio??'')+'"><span class="hint">vazio = sem preço de sócio</span></div></div>'
    +'<div class="f" style="margin-top:12px"><label>Texto da nota fiscal</label><textarea id="pd">'+esc(p.descricao_nota)+'</textarea><span class="hint">{HOSPITAL} e {DATA} são trocados pelos dados da cirurgia</span></div>'
    +'<div class="f" style="margin-top:12px"><label>Token do modelo de contrato na ZapSign</label><input type="text" id="pt" value="'+esc(p.zapsign_template??'')+'"></div>'
-   +'<div class="f" style="margin-top:12px"><label>Campos do contrato</label><textarea id="pc" style="font-family:Courier New,monospace;min-height:120px">'+esc(JSON.stringify(p.campos_contrato||{},null,1))+'</textarea><span class="hint">Cada campo {{...}} do modelo e o dado que vai nele: paciente_nome, paciente_cpf, paciente_whats, paciente_email, data_cirurgia, hospital, medico, procedimento, laser, valor, transporte, total, forma_pagamento</span></div>'
+   +'<div class="f" style="margin-top:12px"><label>Campos do contrato</label><textarea id="pc" style="font-family:Courier New,monospace;min-height:120px">'+esc(JSON.stringify(p.campos_contrato||{},null,1))+'</textarea><span class="hint">Cada campo {{...}} do modelo e o dado que vai nele: contratante_nome, contratante_cpf, contratante_whats, contratante_endereco, contratante_email, contratante_qualidade, paciente_nome, paciente_cpf, paciente_nascimento, medico, medico_crm, hospital, data_cirurgia, horario, transporte, total, pag_forma_contrato, parcelas, taxas_cartao, valor_final, data_limite_pagamento, instrumentadora_nome, instrumentadora_honorarios</span></div>'
    +'<div id="pm"></div><div class="actions"><button class="btn" id="psv">Salvar</button></div></div></div>');
   $('psv').onclick=async()=>{
     let campos; try{campos=JSON.parse($('pc').value||'{}');}catch(e){msg($('pm'),'err','Os campos do contrato não estão num formato válido. Use {"{{NOME}}":"paciente_nome"}.');return;}
@@ -368,61 +397,93 @@ function laserSel(){return document.querySelector('input[name="laser"]:checked')
 function prepararNova(){
   $('dcir').min=hoje();
   document.querySelectorAll('input[name="laser"]').forEach(r=>r.onchange=()=>{fillProc();});
-  ['proc','socio','forma','transp'].forEach(id=>$(id).addEventListener('change',calc));
-  $('transp').addEventListener('input',calc);
-  $('cpf').addEventListener('input',e=>e.target.value=fmtCPF(e.target.value));
-  $('whats').addEventListener('input',e=>e.target.value=fmtFone(e.target.value));
+  ['proc','forma','parc','transp','taxa'].forEach(id=>$(id).addEventListener('change',calc));
+  ['transp','taxa'].forEach(id=>$(id).addEventListener('input',calc));
+  ['cpf','ccpf'].forEach(id=>$(id).addEventListener('input',e=>e.target.value=fmtCPF(e.target.value)));
+  ['whats','cwhats'].forEach(id=>$(id).addEventListener('input',e=>e.target.value=fmtFone(e.target.value)));
+  $('qual').addEventListener('change',()=>{$('wrapContr').hidden=$('qual').value==='Paciente';});
+  $('med').addEventListener('change',()=>{const c=CIR.find(x=>x.medico===$('med').value.trim()&&x.medico_crm); if(c&&!$('crm').value.trim())$('crm').value=c.medico_crm;});
+  $('inome').addEventListener('change',()=>{const c=CIR.find(x=>x.instrumentadora_nome===$('inome').value.trim()&&x.instrumentadora_honorarios!=null); if(c&&$('ihon').value==='')$('ihon').value=c.instrumentadora_honorarios;});
   ['agContrato','agPago'].forEach(id=>$(id).addEventListener('change',rotuloSalvar));
   $('naV').addEventListener('input',()=>$('naV').dataset.touched='1');
   $('naD').value=hoje();
+  $('parc').innerHTML=Array.from({length:12},(_,i)=>'<option value="'+(i+1)+'">'+(i+1)+'x</option>').join('');
   fillProc(); rotuloSalvar();
-  const hs=[...new Set(CIR.map(c=>c.hospital))].sort(), ms=[...new Set(CIR.map(c=>c.medico))].sort();
-  $('hospList').innerHTML=hs.map(h=>'<option value="'+esc(h)+'">').join('');
-  $('medList').innerHTML=ms.map(h=>'<option value="'+esc(h)+'">').join('');
+  const lista=(k)=>[...new Set(CIR.map(c=>c[k]).filter(Boolean))].sort().map(h=>'<option value="'+esc(h)+'">').join('');
+  $('hospList').innerHTML=lista('hospital'); $('medList').innerHTML=lista('medico'); $('instList').innerHTML=lista('instrumentadora_nome');
 }
 function fillProc(){
   const L=laserSel();
-  $('proc').innerHTML=PRECOS.filter(p=>p.laser===L&&p.ativo).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.procedimento)+'</option>').join('');
+  $('proc').innerHTML=PRECOS.filter(p=>p.laser===L&&p.ativo).map(p=>'<option value="'+esc(p.id)+'">'+esc((p.codigo?p.codigo+' · ':'')+p.procedimento)+'</option>').join('');
   if(L==='100W'){$('hosp').value='Hospital do Rim';} else if($('hosp').value==='Hospital do Rim'){$('hosp').value='';}
   $('wrapTransp').hidden=L!=='60W'; if(L!=='60W')$('transp').value=0;
   calc();
 }
+function cartao(){return /^Cartão/.test($('forma').value);}
 function valorAtual(){
-  const p=preco($('proc').value); if(!p)return {v:0,nota:''};
-  $('wrapSocio').hidden=!p.valor_socio; $('wrapForma').hidden=!p.valor_3x;
-  if(p.valor_socio&&$('socio').value==='sim')return {v:Number(p.valor_socio),nota:'Valor de cirurgião sócio'};
-  if(p.valor_3x&&$('forma').value==='3x')return {v:Number(p.valor_3x),nota:'Parcelado em 3x no cartão'};
-  return {v:Number(p.valor_vista),nota:p.valor_3x?'À vista só por PIX, TED ou dinheiro':(p.laser==='60W'?'Transporte somado quando houver deslocamento':'')};
+  const p=preco($('proc').value); if(!p)return {v:0,t:0,tx:0,parc:1,tres:false,nota:''};
+  const credito=$('forma').value==='Cartão de crédito';
+  $('wrapParc').hidden=!(credito&&p.tem_parcelas!==false); $('wrapTaxa').hidden=!(cartao()&&p.tem_parcelas!==false);
+  const parc=credito&&p.tem_parcelas!==false?Number($('parc').value)||1:1;
+  const tres=!!(p.valor_3x&&credito&&(p.tem_parcelas===false||parc>1));
+  const v=Number(tres?p.valor_3x:p.valor_vista), t=p.laser==='60W'?(Number($('transp').value)||0):0, tx=(cartao()&&p.tem_parcelas!==false)?(Number($('taxa').value)||0):0;
+  const partes=['Procedimento '+brl(v)+(tres?' (valor parcelado)':'')]; if(t)partes.push('transporte '+brl(t)); if(tx)partes.push('taxas do cartão '+brl(tx)); if(parc>1)partes.push('em '+parc+'x');
+  return {v,t,tx,parc,tres,nota:partes.join(' + ').replace(' + em',' · em')};
 }
 function rotuloSalvar(){
   const c=$('agContrato').checked, pg=$('agPago').checked; $('pagoAgora').hidden=!pg;
   $('btnSalvar').textContent=c&&pg?'Salvar, enviar contrato e abrir a nota':c?'Salvar e enviar contrato':pg?'Salvar e abrir a nota':'Salvar cirurgia';
   calc();
 }
-function calc(){const {v,nota}=valorAtual(); const t=Number($('transp').value)||0;
-  if($('naV')&&!$('naV').dataset.touched)$('naV').value=(v+t).toFixed(2);
-  $('vValor').textContent=brl(v+t); $('vNota').textContent=t?('Procedimento '+brl(v)+' + transporte '+brl(t)):nota;}
+function calc(){const {v,t,tx,nota}=valorAtual();
+  if($('naV')&&!$('naV').dataset.touched)$('naV').value=(v+t+tx).toFixed(2);
+  $('vValor').textContent=brl(v+t+tx); $('vNota').textContent=nota;}
 $('fNova').addEventListener('submit',async e=>{
   e.preventDefault(); const m=$('novaMsg');
+  const querPago=$('agPago').checked, querContrato=$('agContrato').checked, fComp=$('naC').files[0];
   const nome=$('nome').value.trim().replace(/\s+/g,' '), cpf=$('cpf').value, whats=digits($('whats').value);
+  const ehPac=$('qual').value==='Paciente';
+  const cnome=ehPac?nome:$('cnome').value.trim().replace(/\s+/g,' '), ccpf=ehPac?cpf:$('ccpf').value, cwhats=ehPac?whats:digits($('cwhats').value);
+  const email=$('pemail').value.trim();
   if(nome.split(' ').length<2)return msg(m,'err','Escreva o nome completo do paciente, com sobrenome.');
-  if(!cpfValido(cpf))return msg(m,'err','CPF inválido. Confira os 11 números.');
-  if(whats.length<10||whats.length>11)return msg(m,'err','WhatsApp inválido: use DDD + número, por exemplo (62) 99999-9999.');
+  if(!cpfValido(cpf))return msg(m,'err','CPF do paciente inválido. Confira os 11 números.');
+  if(whats&&(whats.length<10||whats.length>11))return msg(m,'err','WhatsApp do paciente inválido: use DDD + número.');
+  if(!ehPac){
+    if(cnome.split(' ').length<2)return msg(m,'err','Escreva o nome completo do contratante.');
+    if(!cpfValido(ccpf))return msg(m,'err','CPF do contratante inválido.');
+  }
   if(!$('dcir').value)return msg(m,'err','Informe a data da cirurgia.');
   if(!$('hosp').value.trim())return msg(m,'err','Informe o hospital.');
   if(!$('med').value.trim())return msg(m,'err','Informe o médico que vai operar.');
+  if(querContrato){
+    const falta=[];
+    if(cwhats.length<10||cwhats.length>11)falta.push('WhatsApp do contratante');
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))falta.push('e-mail do contratante');
+    if(!$('cend').value.trim())falta.push('endereço do contratante');
+    if(!$('nasc').value)falta.push('nascimento do paciente');
+    if(!$('hora').value)falta.push('horário');
+    if(!$('crm').value.trim())falta.push('CRM do médico');
+    if(!$('inome').value.trim())falta.push('instrumentadora');
+    if($('ihon').value==='')falta.push('honorários da instrumentadora');
+    if(falta.length)return msg(m,'err','Para enviar o contrato, preencha: '+falta.join(', ')+'. Ou desmarque "Enviar o contrato" e envie depois.');
+  }
   const dup=CIR.find(c=>!c.cancelada&&digits(c.paciente_cpf)===digits(cpf)&&c.data_cirurgia===$('dcir').value);
   if(dup&&!$('btnSalvar').dataset.ok){$('btnSalvar').dataset.ok='1';$('btnSalvar').textContent='Salvar mesmo assim';
     return msg(m,'warn','Já existe uma cirurgia deste CPF nesta data ('+dup.hospital+'). Se for outra cirurgia, clique em "Salvar mesmo assim".');}
-  const querPago=$('agPago').checked, querContrato=$('agContrato').checked, fComp=$('naC').files[0];
   if(querPago&&!(Number($('naV').value)>0))return msg(m,'err','Informe o valor recebido.');
   if(fComp&&fComp.size>10*1024*1024)return msg(m,'err','O comprovante passa de 10 MB. Tire uma foto menor ou envie o PDF.');
-  const {v}=valorAtual(); const p=preco($('proc').value);
+  const {v,t,tx,parc,tres}=valorAtual(); const p=preco($('proc').value);
   $('btnSalvar').disabled=true; msg(m,'ok','Salvando…');
-  const row={paciente_nome:nome.toUpperCase(),paciente_cpf:fmtCPF(cpf),paciente_whats:fmtFone(whats),paciente_email:$('pemail').value.trim()||null,
-    data_cirurgia:$('dcir').value,hospital:$('hosp').value.trim(),medico:$('med').value.trim(),preco_id:p.id,
-    cirurgiao_socio:!!(p.valor_socio&&$('socio').value==='sim'),forma_pagamento:(p.valor_3x&&$('forma').value==='3x')?'3x':'vista',
-    valor:v,transporte:Number($('transp').value)||0,observacao:$('obs').value.trim()||null,laser:p.laser,procedimento:p.procedimento};
+  const n=x=>x===''?null:Number(x);
+  const row={paciente_nome:nome.toUpperCase(),paciente_cpf:fmtCPF(cpf),paciente_whats:whats?fmtFone(whats):null,paciente_email:ehPac?(email||null):null,
+    paciente_nascimento:$('nasc').value||null,
+    contratante_qualidade:$('qual').value,contratante_nome:cnome.toUpperCase(),contratante_cpf:fmtCPF(ccpf),contratante_whats:cwhats?fmtFone(cwhats):null,
+    contratante_email:email||null,contratante_endereco:$('cend').value.trim()||null,
+    data_cirurgia:$('dcir').value,horario:$('hora').value||null,hospital:$('hosp').value.trim(),medico:$('med').value.trim(),medico_crm:$('crm').value.trim()||null,
+    instrumentadora_nome:$('inome').value.trim()||null,instrumentadora_honorarios:n($('ihon').value),
+    preco_id:p.id,cirurgiao_socio:p.id==='100_HLS',forma_pagamento:tres?'3x':'vista',pag_forma_contrato:$('forma').value,parcelas:parc,taxas_cartao:tx,
+    valor:v,transporte:t,valor_final:v+t+tx,data_limite_pagamento:$('dlim').value||$('dcir').value,
+    observacao:$('obs').value.trim()||null,laser:p.laser,procedimento:p.procedimento};
   const {data,error}=await supa.from('op_cirurgias').insert(row).select().single();
   if(error){$('btnSalvar').disabled=false;rotuloSalvar();return msg(m,'err','Não foi possível salvar: '+error.message);}
   await log(data.id,'cirurgia_criada',p.procedimento);
@@ -437,10 +498,10 @@ $('fNova').addEventListener('submit',async e=>{
   }
   if(querContrato){
     if(!p.zapsign_template)avisos.push(['warn','Cirurgia salva. O contrato não foi enviado porque este procedimento ainda não tem o modelo da ZapSign ligado.']);
-    else{const r=await enviarContrato(data.id); avisos.push(r.ok?['ok','Contrato enviado para o WhatsApp do paciente.']:['err','Cirurgia salva, mas o contrato não foi enviado: '+r.erro]);}
+    else{const r=await enviarContrato(data.id); avisos.push(r.ok?['ok','Contrato enviado para o WhatsApp do contratante.']:['err','Cirurgia salva, mas o contrato não foi enviado: '+r.erro]);}
   }
   $('btnSalvar').disabled=false; delete $('btnSalvar').dataset.ok;
-  $('fNova').reset(); delete $('naV').dataset.touched; $('naD').value=hoje(); $('agContrato').checked=true; fillProc(); rotuloSalvar(); msg(m,'','');
+  $('fNova').reset(); delete $('naV').dataset.touched; $('naD').value=hoje(); $('agContrato').checked=true; $('wrapContr').hidden=true; fillProc(); rotuloSalvar(); msg(m,'','');
   await carregarCirurgias(); abrirAba('lista'); abrirCirurgia(data.id, querPago?'passo-nota':null);
   avisos.forEach(([k,t])=>{const el=document.createElement('div');el.className='msg '+k;el.textContent=t;$('mMsg').appendChild(el);});
 });
@@ -460,6 +521,7 @@ function chipsDe(c){
   const ck=(c.chk_transporte&&c.chk_instrumentadora&&c.chk_fibra)?['c-ok','Checklist ok']:['c-off','Checklist'];
   return [ct,pg,nf,ck].map(x=>'<span class="chip '+x[0]+'">'+x[1]+'</span>').join('');
 }
+function totalC(c){return c.valor_final!=null?Number(c.valor_final):Number(c.valor)+Number(c.transporte||0);}
 function desenharLista(){
   const q=$('busca').value.trim().toLowerCase(), f=$('filtro').value, qd=digits(q);
   let L=CIR.filter(c=>{
@@ -469,7 +531,7 @@ function desenharLista(){
     if(f==='sem_contrato')return c.contrato_status==='pendente'||c.contrato_status==='recusado';
     if(f==='sem_pagamento')return !c.pago; if(f==='sem_nota')return c.pago&&!c.nota_numero; return true;});
   if(!L.length){$('rows').innerHTML='<div class="empty">'+(CIR.length?'Nenhuma cirurgia neste filtro.':'Nenhuma cirurgia cadastrada ainda. Use a aba "Nova cirurgia" para começar.')+'</div>';return;}
-  $('rows').innerHTML=L.map(c=>{const p={procedimento:c.procedimento,laser:c.laser};return '<div class="row" tabindex="0" data-id="'+c.id+'"><div><div class="n">'+esc(c.paciente_nome)+'</div><div class="d">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+'</div></div><div class="d">'+dBR(c.data_cirurgia)+' · '+esc(c.hospital)+'<br>'+brl(Number(c.valor)+Number(c.transporte||0))+'</div><div class="chips">'+chipsDe(c)+'</div></div>';}).join('');
+  $('rows').innerHTML=L.map(c=>{const p={procedimento:c.procedimento,laser:c.laser};return '<div class="row" tabindex="0" data-id="'+c.id+'"><div><div class="n">'+esc(c.paciente_nome)+'</div><div class="d">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+'</div></div><div class="d">'+dBR(c.data_cirurgia)+' · '+esc(c.hospital)+'<br>'+brl(totalC(c))+'</div><div class="chips">'+chipsDe(c)+'</div></div>';}).join('');
   $('rows').querySelectorAll('.row').forEach(r=>{r.onclick=()=>abrirCirurgia(r.dataset.id);r.onkeydown=e=>{if(e.key==='Enter')abrirCirurgia(r.dataset.id);};});
 }
 
@@ -487,7 +549,7 @@ function filtradas(){
   const i=$('rIni').value, f=$('rFim').value, L=$('rLaser').value;
   return CIR.filter(c=>!c.cancelada&&(!L||c.laser===L)&&(!i||mesDe(c.data_cirurgia)>=i)&&(!f||mesDe(c.data_cirurgia)<=f));
 }
-const totalDe=c=>Number(c.valor)+Number(c.transporte||0);
+const totalDe=c=>totalC(c);
 function agrupa(lista,chave){const g={};lista.forEach(c=>{const k=chave(c);(g[k]=g[k]||[]).push(c);});return g;}
 function linhaResumo(nome,L){const contr=L.reduce((a,c)=>a+totalDe(c),0), rec=L.filter(c=>c.pago).reduce((a,c)=>a+Number(c.pago_valor||0),0);
   return '<tr><td>'+esc(nome)+'</td><td class="num">'+L.length+'</td><td class="num">'+brl(contr)+'</td><td class="num">'+brl(rec)+'</td><td class="num">'+brl(contr-L.filter(c=>c.pago).reduce((a,c)=>a+totalDe(c),0))+'</td><td class="num">'+L.filter(c=>c.nota_numero).length+'</td><td class="num">'+brl(L.length?contr/L.length:0)+'</td></tr>';}
@@ -546,15 +608,15 @@ function descricaoNota(c){const p=preco(c.preco_id)||{};
     .replace('{HOSPITAL}',String(c.hospital).toUpperCase().replace(/^HOSPITAL\s+/,'')).replace('{DATA}',dBR(c.data_cirurgia));}
 function abrirCirurgia(id,foco){
   const c=CIR.find(x=>x.id===id); if(!c)return; const p=Object.assign({},preco(c.preco_id)||{},{procedimento:c.procedimento,laser:c.laser});
-  const total=Number(c.valor)+Number(c.transporte||0);
+  const total=totalC(c);
   const ctxt={pendente:'Ainda não enviado',enviado:'Enviado pelo WhatsApp, aguardando assinatura',assinado:'Assinado pelo paciente',recusado:'O paciente recusou a assinatura',cancelado:'Cancelado na ZapSign'}[c.contrato_status];
   let h='<div class="mhead"><div><h3>'+esc(c.paciente_nome)+'</h3><div class="s">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+' · '+dBR(c.data_cirurgia)+'</div></div><button class="btn ghost small" onclick="fecharModal()">Fechar</button></div><div class="mbody"><div id="mMsg"></div>';
-  h+='<div class="step"><h4>Dados</h4><dl class="kv"><dt>CPF</dt><dd>'+esc(c.paciente_cpf)+'</dd><dt>WhatsApp</dt><dd>'+esc(c.paciente_whats)+'</dd>'+(c.paciente_email?'<dt>E-mail</dt><dd>'+esc(c.paciente_email)+'</dd>':'')+'<dt>Hospital</dt><dd>'+esc(c.hospital)+'</dd><dt>Médico</dt><dd>'+esc(c.medico)+(c.cirurgiao_socio?' (sócio)':'')+'</dd><dt>Valor</dt><dd>'+brl(c.valor)+(Number(c.transporte)?' + transporte '+brl(c.transporte):'')+' · '+(c.forma_pagamento==='3x'?'3x no cartão':'à vista')+'</dd>'+(c.observacao?'<dt>Observação</dt><dd>'+esc(c.observacao)+'</dd>':'')+'</dl></div>';
+  h+='<div class="step"><h4>Dados</h4><dl class="kv"><dt>CPF</dt><dd>'+esc(c.paciente_cpf)+'</dd>'+(c.paciente_whats?'<dt>WhatsApp</dt><dd>'+esc(c.paciente_whats)+'</dd>':'')+(c.contratante_nome&&c.contratante_qualidade!=='Paciente'?'<dt>Contratante</dt><dd>'+esc(c.contratante_nome)+' ('+esc(c.contratante_qualidade)+')</dd>':'')+((c.contratante_email||c.paciente_email)?'<dt>E-mail</dt><dd>'+esc(c.contratante_email||c.paciente_email)+'</dd>':'')+'<dt>Hospital</dt><dd>'+esc(c.hospital)+'</dd><dt>Médico</dt><dd>'+esc(c.medico)+(c.cirurgiao_socio?' (sócio)':'')+'</dd><dt>Valor</dt><dd>'+brl(c.valor)+(Number(c.transporte)?' + transporte '+brl(c.transporte):'')+(Number(c.taxas_cartao)?' + taxas '+brl(c.taxas_cartao):'')+' · '+esc(c.pag_forma_contrato||(c.forma_pagamento==='3x'?'3x no cartão':'à vista'))+(c.parcelas>1?' em '+c.parcelas+'x':'')+'</dd>'+(c.instrumentadora_nome?'<dt>Instrumentadora</dt><dd>'+esc(c.instrumentadora_nome)+(c.instrumentadora_honorarios!=null?' · '+brl(c.instrumentadora_honorarios):'')+'</dd>':'')+(c.observacao?'<dt>Observação</dt><dd>'+esc(c.observacao)+'</dd>':'')+'</dl></div>';
   // contrato
   h+='<div class="step"><h4>Contrato <span class="chip '+({assinado:'c-ok',enviado:'c-info',recusado:'c-bad'}[c.contrato_status]||'c-wait')+'">'+esc(ctxt)+'</span></h4>';
   if(c.cancelada){h+='<p class="hint">Cirurgia cancelada.</p>';}
   else if(c.contrato_status==='pendente'||c.contrato_status==='recusado'||c.contrato_status==='cancelado'){
-    h+=(p.zapsign_template?'<p style="font-size:13px">O contrato de <b>'+esc(p.procedimento)+'</b> vai pelo WhatsApp para <b>'+esc(c.paciente_whats)+'</b>. Confira o número antes de enviar.</p>':'<div class="msg warn">Este procedimento ainda não tem o modelo de contrato ligado. Enquanto isso, envie pela ZapSign como hoje e marque abaixo.</div>')
+    h+=(p.zapsign_template?'<p style="font-size:13px">O contrato de <b>'+esc(p.procedimento)+'</b> vai pelo WhatsApp para <b>'+esc(c.contratante_whats||c.paciente_whats||'?')+'</b>. Confira o número antes de enviar.</p>':'<div class="msg warn">Este procedimento ainda não tem o modelo de contrato ligado. Enquanto isso, envie pela ZapSign como hoje e marque abaixo.</div>')
       +'<div class="actions"><button class="btn" id="bEnv" '+(p.zapsign_template?'':'disabled')+'>Enviar contrato pelo WhatsApp</button><button class="btn sec" id="bManual">Já enviei pela ZapSign</button></div>';
   }else if(c.contrato_status==='enviado'){
     h+='<p style="font-size:13px">Enviado em '+dBR(c.contrato_em)+'. O status muda sozinho quando o paciente assinar.</p><div class="actions">'+(c.contrato_link?'<button class="btn sec small" id="bLink">Copiar link de assinatura</button>':'')+'<button class="btn sec small" id="bAss">Marcar como assinado</button></div>';
@@ -566,6 +628,7 @@ function abrirCirurgia(id,foco){
   else if(!c.cancelada){h+='<div class="grid3"><div class="f"><label for="pgV">Valor recebido (R$)</label><input type="number" step="0.01" id="pgV" value="'+total.toFixed(2)+'"></div><div class="f"><label for="pgF">Forma</label><select id="pgF"><option>PIX</option><option>TED</option><option>Dinheiro</option><option>Cartão 3x</option><option>Cartão à vista</option></select></div><div class="f"><label for="pgD">Data do pagamento</label><input type="date" id="pgD" value="'+hoje()+'"></div></div><div class="f" style="margin-top:10px"><label for="pgC">Comprovante (foto ou PDF)</label><input type="file" id="pgC" accept="image/*,application/pdf"></div><div class="actions"><button class="btn" id="bPago">Confirmar pagamento</button></div>';}
   h+='</div>';
   // nota
+  const tomCPF=c.contratante_cpf||c.paciente_cpf, tomNome=c.contratante_nome||c.paciente_nome;
   const desc=descricaoNota(c), valNota=Number(c.pago_valor||total).toFixed(2).replace('.',',');
   h+='<div class="step" id="passo-nota"><h4>Nota fiscal <span class="chip '+(c.nota_numero?'c-ok':(c.pago?'c-wait':'c-off'))+'">'+(c.nota_numero?'Nota '+esc(c.nota_numero):(c.pago?'A emitir':'Depois do pagamento'))+'</span></h4>';
   if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>';}
@@ -578,7 +641,7 @@ function abrirCirurgia(id,foco){
       +'<li>Espere a faixa verde no topo do site, confira e clique em <b>Gravar uma vez só</b>. No certificado digital, clique <b>Não</b>.</li></ol>'
       +'<div class="actions"><button class="btn" id="bCmd">Copiar comando de preenchimento</button><a class="btn sec" href="'+NOTA_SITE+'" target="_blank" rel="noopener">Abrir site da nota</a></div></div>'
       +'<p style="font-size:12.5px;color:var(--muted);margin-top:12px">Se preferir preencher à mão, os dados estão aqui:</p>'
-      +'<div class="copyrow"><span class="lab">CPF</span><span class="val">'+esc(c.paciente_cpf)+'</span><button class="btn sec small" data-copy="'+esc(digits(c.paciente_cpf))+'">Copiar</button></div>'
+      +'<div class="copyrow"><span class="lab">CPF do tomador</span><span class="val">'+esc(tomCPF)+' · '+esc(tomNome)+'</span><button class="btn sec small" data-copy="'+esc(digits(tomCPF))+'">Copiar</button></div>'
       +'<div class="copyrow"><span class="lab">Valor</span><span class="val">'+esc(valNota)+'</span><button class="btn sec small" data-copy="'+esc(valNota)+'">Copiar</button></div>'
       +'<div class="copyrow"><span class="lab">Descrição</span><span class="val">'+esc(desc)+'</span><button class="btn sec small" data-copy="'+esc(desc)+'">Copiar</button></div>'
       +'<div class="grid2" style="margin-top:12px"><div class="f"><label for="nfN">Número da nota emitida</label><input type="text" id="nfN" inputmode="numeric"></div><div class="f"><label for="nfD">Data de emissão</label><input type="date" id="nfD" value="'+hoje()+'"></div></div><div class="actions"><button class="btn" id="bNota">Registrar nota</button></div>';
@@ -616,7 +679,7 @@ function abrirCirurgia(id,foco){
     if(error)return msg($('mMsg'),'err','Não foi possível abrir o comprovante.'); window.open(data.signedUrl,'_blank','noopener');});
   on('bCmd',function(){
     if(!window.UROLASER_NF_SNIPPET)return msg($('mMsg'),'err','O preenchimento automático não carregou. Recarregue a página.');
-    copiar(window.UROLASER_NF_SNIPPET({cpf:digits(c.paciente_cpf),nome:c.paciente_nome,valor:Number(c.pago_valor||total),descricao:desc}),this);
+    copiar(window.UROLASER_NF_SNIPPET({cpf:digits(c.contratante_cpf||c.paciente_cpf),nome:c.contratante_nome||c.paciente_nome,valor:Number(c.pago_valor||total),descricao:desc}),this);
     log(c.id,'nota_comando_copiado',valNota);});
   on('bNota',async()=>{const n=digits($('nfN').value); if(!n)return msg($('mMsg'),'err','Informe o número da nota emitida.');
     const dup=CIR.find(x=>x.id!==c.id&&x.nota_numero===n); if(dup)return msg($('mMsg'),'err','A nota '+n+' já está registrada para '+dup.paciente_nome+'. Confira o número.');

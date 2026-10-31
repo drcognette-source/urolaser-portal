@@ -19,7 +19,7 @@ Branch `operacao-secretaria`. Nada aqui muda o site até o merge na `main`.
    - Supabase > Edge Functions: publicar `zapsign-enviar` (verify JWT ligado) e `zapsign-retorno` (verify JWT desligado).
    - Secrets: `ZAPSIGN_TOKEN` e `WEBHOOK_CHAVE`.
    - ZapSign > Webhooks: `https://xxhwhkmsknleqqdozlwx.supabase.co/functions/v1/zapsign-retorno?chave=<WEBHOOK_CHAVE>`.
-   - Na tela "Tabela de preços", em cada procedimento: token do modelo e mapa dos campos `{{...}}`.
+   - Os 12 modelos de contrato (60W: HL-1-I, HL-2-I, LT-I, TB-I, UI-I, RB-I; 100W: HL-1-F, HLS-F, HL-2-F, LT-F, TB-F, UI-F) já estão ligados por `supabase/operacao_v2.sql`, com o mapa de todos os campos `{{...}}`.
    Até isso, o botão "Já enviei pela ZapSign" registra o envio feito à mão.
 
 ## Nota fiscal

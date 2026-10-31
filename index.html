@@ -213,7 +213,7 @@ function renderOperacao(){
   const old=document.getElementById('opPanel'); if(old)old.remove();
   const L=OP_CIR.filter(c=>!c.cancelada); const box=document.createElement('div'); box.id='opPanel';
   if(!L.length){box.innerHTML='<div class="panel"><h2>Cirurgias por laser (área Operação)</h2><div class="empty">Nenhuma cirurgia cadastrada ainda na <a href="operacao.html">área Operação</a>.</div></div>';dash.appendChild(box);return;}
-  const tot=c=>Number(c.valor)+Number(c.transporte||0);
+  const tot=c=>c.valor_final!=null?Number(c.valor_final):Number(c.valor)+Number(c.transporte||0);
   const meses=[...new Set(L.map(c=>String(c.pago_em||c.data_cirurgia).slice(0,7)))].sort().slice(-12);
   const rot=m=>LAB[ORDER[Number(m.slice(5,7))-1]]+'/'+m.slice(2,4);
   const soma=(f)=>meses.map(m=>L.filter(c=>f(c,m)).reduce((a,c)=>a+Number(c.pago_valor||0),0));

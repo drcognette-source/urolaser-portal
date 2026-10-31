@@ -44,31 +44,53 @@ Deno.serve(async (req) => {
   if (!p?.zapsign_template)
     return out(422, { erro: "O procedimento ainda não tem modelo de contrato ligado. Peça ao Dr. Marcel." });
 
-  // Valores disponíveis para os campos {{...}} do modelo
+  // Valores disponíveis para os campos {{...}} do modelo (nomes iguais aos campos de op_cirurgias)
+  const din = (v: unknown) => brl(Number(v || 0));
+  const dt = (v: unknown) => (v ? dataBR(String(v)) : "");
+  const transporte = Number(c.transporte || 0), total = Number(c.valor) + transporte;
   const valores: Record<string, string> = {
+    contratante_nome: c.contratante_nome ?? c.paciente_nome,
+    contratante_cpf: c.contratante_cpf ?? c.paciente_cpf,
+    contratante_whats: c.contratante_whats ?? c.paciente_whats ?? "",
+    contratante_endereco: c.contratante_endereco ?? "",
+    contratante_email: c.contratante_email ?? c.paciente_email ?? "",
+    contratante_qualidade: c.contratante_qualidade ?? "Paciente",   // igual às opções do modelo
     paciente_nome: c.paciente_nome,
     paciente_cpf: c.paciente_cpf,
-    paciente_whats: c.paciente_whats,
+    paciente_whats: c.paciente_whats ?? "",
     paciente_email: c.paciente_email ?? "",
-    data_cirurgia: dataBR(c.data_cirurgia),
-    hospital: c.hospital,
+    paciente_nascimento: dt(c.paciente_nascimento),
     medico: c.medico,
+    medico_crm: c.medico_crm ?? "",
+    hospital: c.hospital,
+    data_cirurgia: dt(c.data_cirurgia),
+    horario: c.horario ? String(c.horario).slice(0, 5) : "",
     procedimento: p.procedimento,
     laser: p.laser,
-    valor: brl(Number(c.valor)),
-    transporte: brl(Number(c.transporte || 0)),
-    total: brl(Number(c.valor) + Number(c.transporte || 0)),
-    forma_pagamento: c.forma_pagamento === "3x" ? "3x no cartão" : "à vista (PIX, TED ou dinheiro)",
+    valor: din(c.valor),
+    transporte: din(transporte),
+    total: din(total),
+    pag_forma_contrato: c.pag_forma_contrato ?? "PIX",               // igual às opções do modelo
+    forma_pagamento: c.pag_forma_contrato ?? "PIX",
+    parcelas: String(c.parcelas ?? 1),
+    taxas_cartao: din(c.taxas_cartao),
+    valor_final: din(c.valor_final ?? total + Number(c.taxas_cartao || 0)),
+    data_limite_pagamento: dt(c.data_limite_pagamento ?? c.data_cirurgia),
+    instrumentadora_nome: c.instrumentadora_nome ?? "",
+    instrumentadora_honorarios: din(c.instrumentadora_honorarios),
   };
   const data = Object.entries(p.campos_contrato as Record<string, string>)
     .map(([de, chave]) => ({ de, para: valores[chave] ?? "" }));
+  const vazios = data.filter((d) => !d.para.trim()).map((d) => d.de.replace(/[{}]/g, ""));
+  if (vazios.length) return out(422, { erro: "Faltam dados para o contrato: " + vazios.join(", ") + "." });
 
-  const fone = String(c.paciente_whats).replace(/\D/g, "");
+  const fone = String(valores.contratante_whats).replace(/\D/g, "");
+  if (fone.length < 10 || fone.length > 11) return out(422, { erro: "WhatsApp do contratante inválido." });
   const mes = String(c.data_cirurgia).slice(0, 7);
   const body = {
     template_id: p.zapsign_template,
-    signer_name: c.paciente_nome,
-    signer_email: c.paciente_email || undefined,
+    signer_name: valores.contratante_nome,
+    signer_email: valores.contratante_email || undefined,
     signer_phone_country: "55",
     signer_phone_number: fone,
     send_automatic_whatsapp: true,

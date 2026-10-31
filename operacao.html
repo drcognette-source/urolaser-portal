@@ -277,7 +277,7 @@
 const SUPABASE_URL='https://xxhwhkmsknleqqdozlwx.supabase.co';
 const SUPABASE_ANON='sb_publishable_LR6u6EzV9rcQyuoYnYF9rA_lmWt1o27';
 const supa=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON);
-const NOTA_SITE='https://notaeletronica.com.br/goiania';
+const NOTA_SITE='https://www.notaeletronica.com.br/goiania/Default/Master2.aspx';
 let USER_EMAIL='', PAPEL=null, PRECOS=[], CIR=[];
 
 const $=id=>document.getElementById(id);
@@ -634,7 +634,7 @@ function abrirCirurgia(id,foco){
   if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>';}
   else if(c.pago&&!c.cancelada){
     h+='<div class="nfauto"><b>Preenchimento automático</b><ol>'
-      +'<li>Abra o site da nota, entre com o login, escolha <b>Uro Laser</b> e clique em <b>Emitir NFS-e</b>.</li>'
+      +'<li>Abra o site da nota, entre com o login, escolha <b>Uro Laser</b>, clique em <b>Menu</b> e depois em <b>Emitir NFS-e</b>. Espere o formulário aparecer.</li>'
       +'<li>Volte aqui e clique em <b>Copiar comando de preenchimento</b>.</li>'
       +'<li>Na aba do site, abra o Console: <b>Cmd + Option + J</b> no Mac, <b>F12</b> e depois a aba Console no Windows.</li>'
       +'<li>Cole (Cmd+V ou Ctrl+V) e aperte Enter. Na primeira vez o Chrome pede para digitar <code>allow pasting</code>; digite, Enter, e cole de novo.</li>'

@@ -25,4 +25,4 @@ Branch `operacao-secretaria`. Nada aqui muda o site até o merge na `main`.
 ## Nota fiscal
 
 Padrão conferido na nota 229 (13/10/2026): descrição "REFERENTE AO EQUIPAMENTO E FIBRA LASER UTILIZADO NA CIRURGIA NO HOSPITAL <HOSPITAL>.", Medicina 04.01.01, NBS 1.2301.22.00, ISS 3,5% não retido, federais não retidos, CST 200 / 200029, indicador de operação 030102.
-A Operação mostra CPF, valor e descrição com botão de copiar. A Silvane emite no site da prefeitura e registra o número. O atalho de preenchimento (`App_NFSe_UroLaser_Secretaria.html`, no Mac) será trazido para este site e ajustado para a descrição atual e o indicador 030102.
+Preenchimento automático: `nf-urolaser.js`, adaptado do Emissor NFS-e PF (Cognette) validado em jun/2026, com os códigos da Uro Laser e o IBS/CBS por último. A Operação gera o comando; a Silvane cola no Console do site da prefeitura, confere e grava. O comando nunca clica em Gravar, bloqueia os botões de gravação e confere o contador de notas antes e depois. Testado em formulário simulado; a primeira nota real deve ser acompanhada.

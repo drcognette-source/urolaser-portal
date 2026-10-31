@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Urolaser · Operação</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="nf-urolaser.js?v=1"></script>
 <style>
   :root{--teal:#0E4D5C;--teal2:#15707E;--tealbg:#e8f3f4;--ink:#1d2733;--muted:#5b6b78;--line:#e3e8ec;--bg:#f5f7f8;--card:#fff;
         --ok:#1B5E20;--okbg:#e7f6e9;--warn:#8a5a00;--warnbg:#fff4dc;--bad:#B71C1C;--badbg:#fdecea;--info:#0D47A1;--infobg:#e6eefb}
@@ -113,6 +114,9 @@
   .kpi .s{font-size:11.5px;color:var(--muted)}
   h3.sec{font-size:13.5px;color:var(--teal);margin:18px 0 8px}
   tr.tot td{font-weight:bold;border-top:2px solid var(--line)}
+  .nfauto{background:var(--tealbg);border-radius:10px;padding:12px 14px;font-size:13px}
+  .nfauto ol{margin:6px 0 0 18px;display:flex;flex-direction:column;gap:4px}
+  .nfauto code{background:#fff;padding:1px 5px;border-radius:4px}
   [hidden]{display:none!important}
 </style>
 </head>
@@ -566,11 +570,17 @@ function abrirCirurgia(id,foco){
   h+='<div class="step" id="passo-nota"><h4>Nota fiscal <span class="chip '+(c.nota_numero?'c-ok':(c.pago?'c-wait':'c-off'))+'">'+(c.nota_numero?'Nota '+esc(c.nota_numero):(c.pago?'A emitir':'Depois do pagamento'))+'</span></h4>';
   if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>';}
   else if(c.pago&&!c.cancelada){
-    h+='<p style="font-size:13px">Abra o site da nota, entre com o login da Uro Laser e use os dados abaixo. Classificação de sempre: Medicina 04.01.01, ISS 3,5% não retido, federais não retidos.</p>'
+    h+='<div class="nfauto"><b>Preenchimento automático</b><ol>'
+      +'<li>Abra o site da nota, entre com o login, escolha <b>Uro Laser</b> e clique em <b>Emitir NFS-e</b>.</li>'
+      +'<li>Volte aqui e clique em <b>Copiar comando de preenchimento</b>.</li>'
+      +'<li>Na aba do site, abra o Console: <b>Cmd + Option + J</b> no Mac, <b>F12</b> e depois a aba Console no Windows.</li>'
+      +'<li>Cole (Cmd+V ou Ctrl+V) e aperte Enter. Na primeira vez o Chrome pede para digitar <code>allow pasting</code>; digite, Enter, e cole de novo.</li>'
+      +'<li>Espere a faixa verde no topo do site, confira e clique em <b>Gravar uma vez só</b>. No certificado digital, clique <b>Não</b>.</li></ol>'
+      +'<div class="actions"><button class="btn" id="bCmd">Copiar comando de preenchimento</button><a class="btn sec" href="'+NOTA_SITE+'" target="_blank" rel="noopener">Abrir site da nota</a></div></div>'
+      +'<p style="font-size:12.5px;color:var(--muted);margin-top:12px">Se preferir preencher à mão, os dados estão aqui:</p>'
       +'<div class="copyrow"><span class="lab">CPF</span><span class="val">'+esc(c.paciente_cpf)+'</span><button class="btn sec small" data-copy="'+esc(digits(c.paciente_cpf))+'">Copiar</button></div>'
       +'<div class="copyrow"><span class="lab">Valor</span><span class="val">'+esc(valNota)+'</span><button class="btn sec small" data-copy="'+esc(valNota)+'">Copiar</button></div>'
       +'<div class="copyrow"><span class="lab">Descrição</span><span class="val">'+esc(desc)+'</span><button class="btn sec small" data-copy="'+esc(desc)+'">Copiar</button></div>'
-      +'<div class="actions"><a class="btn sec" href="'+NOTA_SITE+'" target="_blank" rel="noopener">Abrir site da nota</a></div>'
       +'<div class="grid2" style="margin-top:12px"><div class="f"><label for="nfN">Número da nota emitida</label><input type="text" id="nfN" inputmode="numeric"></div><div class="f"><label for="nfD">Data de emissão</label><input type="date" id="nfD" value="'+hoje()+'"></div></div><div class="actions"><button class="btn" id="bNota">Registrar nota</button></div>';
   }
   h+='</div>';
@@ -604,6 +614,10 @@ function abrirCirurgia(id,foco){
     if(await salvar(c.id,{pago:true,pago_valor:v,pago_forma:$('pgF').value,pago_em:$('pgD').value,comprovante_path:path},'pagamento_confirmado',brl(v)))abrirCirurgia(c.id,'passo-nota');});
   on('bVerComp',async()=>{const {data,error}=await supa.storage.from('comprovantes').createSignedUrl(c.comprovante_path,300);
     if(error)return msg($('mMsg'),'err','Não foi possível abrir o comprovante.'); window.open(data.signedUrl,'_blank','noopener');});
+  on('bCmd',function(){
+    if(!window.UROLASER_NF_SNIPPET)return msg($('mMsg'),'err','O preenchimento automático não carregou. Recarregue a página.');
+    copiar(window.UROLASER_NF_SNIPPET({cpf:digits(c.paciente_cpf),nome:c.paciente_nome,valor:Number(c.pago_valor||total),descricao:desc}),this);
+    log(c.id,'nota_comando_copiado',valNota);});
   on('bNota',async()=>{const n=digits($('nfN').value); if(!n)return msg($('mMsg'),'err','Informe o número da nota emitida.');
     const dup=CIR.find(x=>x.id!==c.id&&x.nota_numero===n); if(dup)return msg($('mMsg'),'err','A nota '+n+' já está registrada para '+dup.paciente_nome+'. Confira o número.');
     if(await salvar(c.id,{nota_numero:n,nota_em:$('nfD').value},'nota_registrada',n))abrirCirurgia(c.id);});

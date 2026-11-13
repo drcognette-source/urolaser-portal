@@ -62,6 +62,8 @@
   .msg.err{background:var(--badbg);color:var(--bad)}
   .msg.ok{background:var(--okbg);color:var(--ok)}
   .msg.warn{background:var(--warnbg);color:var(--warn)}
+  .msg.info{background:var(--infobg);color:var(--info)}
+  .hint{font-size:12.5px;color:var(--muted)}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   /* lista */
   .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
@@ -152,6 +154,7 @@
     <button class="tab" data-tab="nova">Nova cirurgia</button>
     <button class="tab" data-tab="precos">Tabela de preços</button>
     <button class="tab" data-tab="relat" id="tabRelat" hidden>Relatórios</button>
+    <button class="tab" data-tab="notaspj" id="tabNotasPj" hidden>Notas hospitais (teste)</button>
   </div>
 
   <!-- LISTA -->
@@ -206,7 +209,7 @@
         <div class="f"><label for="ccpf">CPF do contratante</label><input type="text" id="ccpf" inputmode="numeric" placeholder="000.000.000-00"></div>
         <div class="f"><label for="cwhats">WhatsApp do contratante</label><input type="tel" id="cwhats" inputmode="tel" placeholder="(62) 99999-9999"></div>
       </div>
-      <div class="f" style="margin-top:12px"><label for="cend">Endereço do contratante</label><input type="text" id="cend" placeholder="Rua, número, bairro, cidade/UF, CEP"></div>
+      <div id="slotEndN"></div>
 
       <h3 class="sub">Cirurgia</h3>
       <div class="grid3">
@@ -256,6 +259,11 @@
     <div class="scroll"><table id="tPrecos"></table></div>
     <div id="precosMsg"></div>
   </section>
+  <!-- NOTAS PARA HOSPITAL (sócio, só homologação) -->
+  <section id="tab-notaspj" class="panel" hidden>
+    <h2>Notas para hospital (teste)</h2>
+    <div id="npjBox"></div>
+  </section>
   <!-- RELATÓRIOS (sócios) -->
   <section id="tab-relat" class="panel" hidden>
     <h2>Relatórios por laser</h2>
@@ -296,6 +304,776 @@ async function copiar(texto,btn){
   catch(e){const t=document.createElement('textarea');t.value=texto;document.body.appendChild(t);t.select();try{document.execCommand('copy');btn.textContent='Copiado';}catch(_){}t.remove();}
 }
 async function log(cirurgia,acao,detalhe){try{await supa.from('op_eventos').insert({cirurgia,acao,detalhe:detalhe||null});}catch(e){}}
+
+/* ================= NFS-e por API da Uro Laser + cadastro mínimo de quem assina e recebe a nota (11/11/2026) ================= */
+// Copiado da lógica testada do app da secretaria (fonte/nfse_bloco.js da Cognette), enxuto para a página Operação. A página só pede ao
+// servidor (função nfse), mostra o resumo para conferir e confirma UMA vez; em produção a confirmação exige digitar emitir nota. Toda a
+// regra fiscal, as travas de produção e a decisão final ficam no servidor.
+// DUAS FORMAS na ficha da cirurgia (passo Nota fiscal, depois do pagamento): "Emitir por API" e "Copiar para o portal" (o comando de
+// preenchimento que já existia). A escolha fica neste aparelho. Sem API disponível, só o portal aparece.
+// CADASTRO MÍNIMO ÚNICO: o bloco "Endereço de quem assina e recebe a nota" (CEP, rua, número, bairro, complemento e cidade) alimenta a
+// nota (tomador) e o contrato da ZapSign: o texto contratante_endereco do contrato é montado sozinho a partir destes campos.
+// Anti-duplicidade: nota REAL por API em andamento ou autorizada trava o portal; nota autorizada em produção é gravada na cirurgia
+// (nota_numero e nota_em) e, se for cancelada, o registro é desfeito. Cancelar só quem o servidor diz que pode (sócio).
+(function(){
+  try{
+    const q=new URLSearchParams(location.search).get('nfse');
+    if(q==='hom'||q==='off'){
+      localStorage.removeItem('uro_nfse_hom');
+      if(q==='hom')localStorage.setItem('uro_nfse_hom','1');
+      const u=new URL(location.href);u.searchParams.delete('nfse');
+      history.replaceState(null,'',u.pathname+u.search+u.hash);
+    }
+  }catch(e){}
+})();
+let NFSE_EST=null; // {papel,pode_emitir,pode_cancelar,pode_pj,emitente,emitente_motivo,homologacao,producao} da ação "estado"; null = o servidor não respondeu: sem painel de API
+async function uroCarregarEstado(){
+  if(NFSE_EST||!PAPEL)return;
+  const r=await uroChamar({acao:'estado'});
+  if(r.ok&&r.data&&r.data.estado&&typeof r.data.estado==='object')NFSE_EST=r.data.estado;
+  if(typeof uroPjAtualizarAba==='function')uroPjAtualizarAba(); // mostra ou esconde a aba de notas para hospital (teste)
+}
+/* ---------- QUEM emite: este app emite SÓ pela URO LASER LTDA (não confundir com a Cognette) ---------- */
+// O servidor informa o emitente dele em estado.emitente. Se não for exatamente a Uro Laser (outro CNPJ, não configurado, função publicada no
+// projeto errado), a emissão por API some desta página (uroAmb devolve vazio): só o portal fica, com o motivo na tela. A conferência de cada nota
+// confirma o emitente de novo antes de liberar o botão. O servidor e o banco fazem a mesma trava; esta é a terceira.
+const URO_EMITENTE={razao:'URO LASER LTDA',cnpj:'50.624.289/0001-98'};
+const uroEmitenteIgual=e=>!!e&&typeof e==='object'&&e.cnpj===URO_EMITENTE.cnpj&&e.razao_social===URO_EMITENTE.razao;
+const uroEmitenteOk=()=>!!NFSE_EST&&uroEmitenteIgual(NFSE_EST.emitente);
+const URO_EMIT_MOTIVO={ausente:'faltam o CNPJ e a inscrição municipal do emitente nos segredos do servidor',invalido:'o CNPJ do emitente nos segredos do servidor é inválido',
+  outro_cnpj:'o CNPJ do emitente configurado no servidor NÃO é o da Uro Laser (pode ser o de outra empresa)',sem_inscricao:'falta a inscrição municipal do emitente nos segredos do servidor',
+  projeto_errado:'esta função está publicada em um projeto que não é o da Uro Laser'};
+const uroEmitenteTxt=e=>uroEmitenteIgual(e)?esc(e.razao_social)+' · CNPJ '+esc(e.cnpj):'<b>emitente não confirmado</b>';
+function uroHtmlEmitente(amb){
+  return '<div class="msg info" id="nsEmitente" role="note"><b>Emitente (quem emite a nota):</b> '+esc(URO_EMITENTE.razao)+' · CNPJ '+esc(URO_EMITENTE.cnpj)+' · Goiânia/GO<br>'
+    +'<b>Ambiente:</b> '+(amb==='producao'?'PRODUÇÃO (nota fiscal real)':'homologação (teste, sem valor fiscal)')+'</div>';
+}
+function uroHtmlEmitenteBloqueio(){
+  if(!NFSE_EST||uroEmitenteOk())return '';
+  if(NFSE_EST.homologacao!==true&&NFSE_EST.producao!==true)return ''; // emissão desligada no servidor: nada a explicar
+  if(PAPEL!=='socio')return '<div class="msg warn" id="nsEmitenteErro"><b>Emissão por API indisponível.</b> Use o portal e avise o Dr. Marcel.</div>';
+  return '<div class="msg err" id="nsEmitenteErro"><b>Emissão por API bloqueada:</b> '+esc(URO_EMIT_MOTIVO[NFSE_EST.emitente_motivo]||'o servidor não confirmou o emitente')+'. Nada será emitido por aqui até corrigir; use o portal.</div>';
+}
+// Nome do PDF baixado: sempre com a empresa e, na homologação, com TESTE_ na frente (nunca se confunde com nota real nem com a de outra empresa).
+function uroPdfNome(r,quem){
+  const n=String(digits(r.numero)||'sem-numero').padStart(6,'0');
+  const d=String(r.data_emissao||r.competencia||'').slice(0,10);
+  return ((r.ambiente==='producao')?'':'TESTE_')+'NFSe_UroLaser_'+n+(quem?'_'+quem:'')+(d?'_'+d:'')+'.pdf';
+}
+const uroAmb=()=>{
+  if(!NFSE_EST||!uroEmitenteOk())return '';
+  // Teste em homologação: só o sócio, com a chave deste aparelho (abrir a página com ?nfse=hom; ?nfse=off desliga) e se o servidor liga a homologação.
+  if(PAPEL==='socio'&&NFSE_EST.homologacao===true){try{if(localStorage.getItem('uro_nfse_hom')==='1')return 'homologacao';}catch(e){}}
+  return (NFSE_EST.producao===true&&NFSE_EST.pode_emitir===true)?'producao':''; // produção ligada no servidor para esta origem e para este usuário
+};
+const uroProd=()=>uroAmb()==='producao';
+const uroPodeCancelar=()=>!!(NFSE_EST&&NFSE_EST.pode_cancelar===true);
+const URO_ERRO={
+  AMBIENTE_DESABILITADO:'A emissão está desligada no servidor.',
+  PERFIL_NAO_APROVADO:'Por API só está liberada a cirurgia com pessoa física (quem assina o contrato) como tomador. Nota para hospital ainda vai pelo portal.',
+  EMITENTE_NAO_CONFIGURADO:'Faltam o CNPJ ou a inscrição municipal do emitente (Uro Laser) nos segredos do servidor, ou o CNPJ configurado não é o da Uro Laser.',
+  TOMADOR_IGUAL_AO_EMITENTE:'O tomador tem o mesmo CNPJ do emitente (a Uro Laser). Corrija o cadastro do hospital.',
+  NOTA_MANUAL_EXISTENTE:'Esta cirurgia já tem nota registrada.',
+  PAGAMENTO_NAO_CONFIRMADO:'Confirme o pagamento da cirurgia antes de emitir a nota.',
+  EMISSAO_ATIVA_EXISTENTE:'Já existe uma emissão em andamento ou autorizada para esta cirurgia. Veja a lista abaixo.',
+  FOCUS_NAO_CONFIGURADA:'A chave da Focus não está no servidor.',
+  SOCIO_OBRIGATORIO:'Esta ação é só dos sócios.',
+  ATENDIMENTO_NAO_ENCONTRADO:'Cirurgia não encontrada.',
+  EMISSAO_NAO_ENCONTRADA:'Emissão não encontrada.',
+  REVISAO_DIVERGENTE:'A cirurgia mudou desde a conferência. Confira de novo.',
+  OPERACAO_REUTILIZADA:'Este pedido já foi usado com outros dados. Confira de novo.',
+  TOMADOR_DIVERGENTE:'O tomador não bate com o cadastro da cirurgia.',
+  DOCUMENTO_INVALIDO:'O CPF do tomador é inválido.',
+  VALOR_EXIGE_AJUSTE:'O valor não bate com o pagamento registrado.',
+  VALOR_INVALIDO:'Valor inválido.',
+  DATA_INVALIDA:'Data inválida.',
+  DESCRICAO_INVALIDA:'Descrição vazia, longa demais (máximo 1000 letras) ou com caracteres que não podem.',
+  ENDERECO_TOMADOR_OBRIGATORIO:'Falta o endereço de quem assina e recebe a nota. A prefeitura recusa a nota sem CEP, rua, número e bairro: complete o endereço acima e confira de novo.',
+  TEXTO_INVALIDO:'Algum texto do endereço está vazio, longo demais ou com caracteres que não podem.',
+  CODIGO_INVALIDO:'Algum campo está fora do formato (CEP com 8 números, UF com 2 letras, município com 7 números).',
+  ATENDIMENTO_CANCELADO:'Cirurgia cancelada.',
+  JUSTIFICATIVA_INVALIDA:'A justificativa precisa ter de 15 a 255 letras e não pode ter nome, CPF, diagnóstico nem procedimento (o texto vai para a prefeitura).',
+  EMISSAO_NAO_AUTORIZADA:'Só nota autorizada pode ser cancelada.',
+  PDF_INDISPONIVEL:'O PDF da nota ainda não está disponível no servidor da Focus.',
+  PDF_INVALIDO:'O arquivo que veio não é um PDF válido.',
+  AMBIENTE_DIVERGENTE:'Esta emissão é de outro ambiente. Recarregue a página e confira de novo.',
+  SESSAO_INVALIDA:'Sua sessão terminou. Entre de novo.',
+  ORIGEM_NAO_PERMITIDA:'Este endereço do site não está autorizado a emitir.',
+  PRODUCAO_ORIGEM_NAO_PERMITIDA:'Este endereço do site não está liberado para emitir em produção.',
+  SERVICO_INDISPONIVEL:'O servidor falhou. Tente conferir de novo em instantes.',
+  SEM_RESPOSTA:'O servidor não respondeu.'
+};
+const uroMsgErro=cod=>URO_ERRO[cod]||('Erro técnico: '+cod+'.');
+const URO_ST={reservada:['c-wait','Reservada'],enviando:['c-wait','Enviando'],processando:['c-info','Processando'],autorizada:['c-ok','Autorizada (teste)'],
+  rejeitada:['c-bad','Rejeitada'],cancelada:['c-off','Cancelada'],resultado_incerto:['c-wait','Resultado incerto']};
+const uroRot=r=>(r.ambiente==='producao'&&r.estado==='autorizada')?['c-ok','Autorizada']:(URO_ST[r.estado]||['c-off',r.estado]);
+const URO_ABERTOS=['reservada','enviando','processando','resultado_incerto'];
+const URO={op:{},tmr:null};
+async function uroChamar(body){
+  try{
+    const {data,error}=await supa.functions.invoke('nfse',{body});
+    if(!error&&data&&data.ok!==false)return {ok:true,data};
+    if(error){try{const j=await error.context.json();return {ok:false,codigo:(j&&j.erro)||'SERVICO_INDISPONIVEL'};}catch(_){return {ok:false,codigo:'SEM_RESPOSTA'};}}
+    return {ok:false,codigo:(data&&data.erro)||'SERVICO_INDISPONIVEL'};
+  }catch(e){return {ok:false,codigo:'SEM_RESPOSTA'};}
+}
+function uroMsg(k,t){const e=$('msg-uro');if(e)msg(e,k,t);}
+
+/* ---------- cadastro mínimo: endereço de quem assina e recebe a nota ---------- */
+const URO_GYN='5208707';
+const uroFmtCep=s=>{const d=digits(s).slice(0,8);return d.length>5?d.slice(0,5)+'-'+d.slice(5):d;};
+function uroEndHtml(p,v,titulo,nota){
+  v=v||{}; const outra=!!v.contratante_municipio_ibge&&v.contratante_municipio_ibge!==URO_GYN;
+  const inp=(id,rot,val,extra,span)=>'<div class="f"'+(span?' style="grid-column:span '+span+'"':'')+'><label for="'+p+id+'">'+rot+'</label><input type="text" id="'+p+id+'" autocomplete="off" value="'+esc(val||'')+'" '+(extra||'')+'></div>';
+  return '<div class="uroend" id="'+p+'End" style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px">'
+    +'<div style="font-weight:bold;margin-bottom:4px">'+esc(titulo||'Endereço de quem assina e recebe a nota')+'</div>'
+    +'<span class="hint">'+esc(nota||'A prefeitura recusa a nota sem CEP, rua, número e bairro. O mesmo endereço vai no contrato da ZapSign.')+'</span>'
+    +'<div class="grid3" style="margin-top:10px">'+inp('Cep','CEP',uroFmtCep(v.contratante_cep),'inputmode="numeric" placeholder="00000-000" maxlength="9"')
+      +inp('Log','Rua, avenida',v.contratante_logradouro,'maxlength="150"',2)+'</div>'
+    +'<div class="grid3" style="margin-top:12px">'+inp('Num','Número',v.contratante_numero,'maxlength="20"')+inp('Bai','Bairro',v.contratante_bairro,'maxlength="150"')
+      +inp('Com','Complemento (opcional)',v.contratante_complemento,'maxlength="60" placeholder="Quadra, lote, apto"')+'</div>'
+    +'<label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="'+p+'Out"'+(outra?' checked':'')+'><span>Outra cidade (o padrão é Goiânia/GO)</span></label>'
+    +'<div class="grid3" id="'+p+'OutBox"'+(outra?'':' hidden')+' style="margin-top:8px">'+inp('Cid','Cidade',v.contratante_cidade_nome,'maxlength="80"')
+      +inp('Ibge','Código IBGE do município (7 números)',v.contratante_municipio_ibge&&outra?v.contratante_municipio_ibge:'','inputmode="numeric" maxlength="7"')
+      +inp('Uf','UF',outra?v.contratante_uf:'','maxlength="2" style="text-transform:uppercase"')+'</div></div>';
+}
+function uroEndLigar(p){
+  const c=$(p+'Cep'); if(c)c.addEventListener('input',()=>{c.value=uroFmtCep(c.value);});
+  const o=$(p+'Out'); if(o)o.addEventListener('change',()=>{$(p+'OutBox').hidden=!o.checked;});
+}
+function uroEndMontar(p,slot,v,titulo,nota){const s=$(slot);if(!s)return;s.innerHTML=uroEndHtml(p,v,titulo,nota);uroEndLigar(p);}
+// Lê o bloco: {campos (as 7 colunas + o texto do contrato), texto, erro}. Tudo vazio (e sem outra cidade) = nenhum campo (null).
+function uroEndLer(p){
+  const g=id=>{const e=$(p+id);return e?String(e.value||'').replace(/\s+/g,' ').trim():'';};
+  const cep=digits(g('Cep')), log=g('Log'), num=g('Num'), bai=g('Bai'), com=g('Com'), outra=!!($(p+'Out')&&$(p+'Out').checked);
+  const vazio=!cep&&!log&&!num&&!bai&&!com;
+  const nulo={contratante_cep:null,contratante_logradouro:null,contratante_numero:null,contratante_bairro:null,contratante_complemento:null,
+    contratante_municipio_ibge:null,contratante_uf:null,contratante_endereco:null};
+  if(vazio&&!outra)return {campos:nulo,texto:null,erro:null};
+  if(cep&&cep.length!==8)return {campos:nulo,texto:null,erro:'O CEP precisa ter 8 números.'};
+  if(log.length>150||num.length>150||bai.length>150||com.length>60)return {campos:nulo,texto:null,erro:'Algum campo do endereço está longo demais (complemento até 60 letras).'};
+  let cid='Goiânia', ibge=URO_GYN, uf='GO';
+  if(outra){cid=g('Cid');ibge=digits(g('Ibge'));uf=g('Uf').toUpperCase();
+    if(!cid)return {campos:nulo,texto:null,erro:'Escreva o nome da cidade.'};
+    if(ibge.length!==7)return {campos:nulo,texto:null,erro:'O código IBGE do município tem 7 números.'};
+    if(!/^[A-Z]{2}$/.test(uf))return {campos:nulo,texto:null,erro:'A UF tem 2 letras.'};}
+  const texto=[log,num,com,bai,cid+'/'+uf,cep?'CEP '+uroFmtCep(cep):''].filter(Boolean).join(', ');
+  return {texto,erro:null,campos:{contratante_cep:cep||null,contratante_logradouro:log||null,contratante_numero:num||null,contratante_bairro:bai||null,
+    contratante_complemento:com||null,contratante_municipio_ibge:ibge,contratante_uf:uf,contratante_endereco:texto}};
+}
+// O que falta para a nota e para o contrato: os quatro campos que a prefeitura exige mais o município.
+function uroEndFalta(c){
+  const f=[]; if(digits(c.contratante_cep).length!==8)f.push('CEP'); if(!String(c.contratante_logradouro||'').trim())f.push('rua');
+  if(!String(c.contratante_numero||'').trim())f.push('número'); if(!String(c.contratante_bairro||'').trim())f.push('bairro');
+  if(!c.contratante_municipio_ibge||!c.contratante_uf)f.push('cidade');
+  return f;
+}
+function uroEndTextoDe(c){
+  return [c.contratante_logradouro,c.contratante_numero,c.contratante_complemento,c.contratante_bairro,
+    c.contratante_municipio_ibge?(c.contratante_municipio_ibge===URO_GYN?'Goiânia':'município '+c.contratante_municipio_ibge)+'/'+(c.contratante_uf||''):'',
+    c.contratante_cep?'CEP '+uroFmtCep(c.contratante_cep):''].filter(Boolean).join(', ');
+}
+// Passo da ficha: completar ou corrigir o endereço (cirurgias antigas só têm o texto livre). Fechado quando está completo.
+function uroPassoEndereco(c){
+  if(c.cancelada)return '';
+  const falta=uroEndFalta(c), ok=!falta.length;
+  return '<details class="step" id="passo-end"'+(ok?'':' open')+'><summary style="cursor:pointer;font-weight:bold">Endereço de quem assina e recebe a nota <span class="chip '+(ok?'c-ok':'c-wait')+'">'+(ok?'Completo':'Falta '+esc(falta.join(', ')))+'</span></summary>'
+    +(!ok&&c.contratante_endereco?'<p class="hint" style="margin:8px 0 0">Endereço antigo, em texto livre: '+esc(c.contratante_endereco)+'</p>':'')
+    +'<div id="slotEndM"></div><div id="mMsgEnd"></div><div class="actions"><button class="btn sec" id="bEndSalvar" type="button">Salvar endereço</button></div></details>';
+}
+function uroLigarEndereco(c){
+  if(!$('slotEndM'))return;
+  uroEndMontar('m','slotEndM',c,'Endereço do contratante (usado na nota e no contrato)');
+  $('bEndSalvar').onclick=async()=>{
+    const e=uroEndLer('m'); if(e.erro)return msg($('mMsgEnd'),'err',e.erro);
+    if(!e.texto)return msg($('mMsgEnd'),'err','Preencha o endereço para salvar.');
+    $('bEndSalvar').disabled=true;
+    const r=await salvar(c.id,e.campos,'endereco_contratante','nota e contrato');
+    if(r){abrirCirurgia(c.id,'passo-end');const el=$('mMsg');if(el)msg(el,'ok','Endereço salvo. A nota e o contrato passam a usar este endereço.');}
+    else $('bEndSalvar').disabled=false;
+  };
+}
+
+/* ---------- nota por API na ficha da cirurgia ---------- */
+// Tomador = quem assina o contrato (mesma regra do servidor, cirurgia.ts): o paciente, ou o contratante quando o CPF dele difere.
+function uroTomador(c){
+  const cp=digits(c.contratante_cpf), pp=digits(c.paciente_cpf), resp=!!cp&&cp!==pp;
+  return resp?{origem:'responsavel',nome:String(c.contratante_nome||'').trim(),cpf:cp,cpfFmt:c.contratante_cpf}
+             :{origem:'paciente',nome:String(c.paciente_nome||'').trim(),cpf:pp,cpfFmt:c.paciente_cpf};
+}
+const uroCentavos=c=>Math.round(Number(c.pago_valor||0)*100);
+const uroElegivel=c=>!!c&&!c.cancelada&&c.pago===true&&!c.nota_numero&&uroCentavos(c)>0&&cpfValido(uroTomador(c).cpf);
+const uroDisponivel=c=>!!uroAmb()&&uroElegivel(c);
+const uroTxtDesfazer=()=>uroPodeCancelar()?'Para desfazer, use Cancelar nota na lista abaixo (definitivo, com justificativa).':'Para desfazer, só o Dr. Marcel cancela: avise-o antes de qualquer outra coisa.';
+const URO_FORMA_DICA={api:'A nota sai direto do sistema, sem abrir o site da prefeitura. O número é gravado nesta cirurgia sozinho.',
+  portal:'Você copia os dados, cola no site da prefeitura e depois registra o número aqui.'};
+function uroForma(c){
+  if(!uroDisponivel(c))return 'portal';
+  let f=null;try{f=localStorage.getItem('uro_nf_forma');}catch(e){}
+  return f==='portal'?'portal':'api';
+}
+function uroHtmlForma(c,forma){
+  const bloqueio=uroHtmlEmitenteBloqueio(); if(bloqueio)return bloqueio;
+  if(!uroDisponivel(c))return '';
+  const b=(k,t)=>'<button type="button" class="btn'+(forma===k?'':' sec')+'" role="radio" aria-checked="'+(forma===k)+'" data-forma="'+k+'">'+t+'</button>';
+  return '<div class="actions" role="radiogroup" aria-label="Forma de emitir a nota" id="nfForma">'+b('api','Emitir por API')+b('portal','Copiar para o portal')+'</div>'
+    +'<p class="hint" id="nfFormaDica" style="margin:6px 0 12px">'+esc(URO_FORMA_DICA[forma])+'</p>';
+}
+function uroLigarForma(){
+  const box=$('nfForma'); if(!box)return;
+  box.querySelectorAll('[data-forma]').forEach(b=>b.onclick=()=>{
+    const f=b.dataset.forma;
+    try{localStorage.setItem('uro_nf_forma',f);}catch(e){}
+    box.querySelectorAll('[data-forma]').forEach(x=>{const on=x.dataset.forma===f;x.classList.toggle('sec',!on);x.setAttribute('aria-checked',String(on));});
+    if($('nfPainelApi'))$('nfPainelApi').hidden=f!=='api';
+    if($('nfPainelPortal'))$('nfPainelPortal').hidden=f!=='portal';
+    $('nfFormaDica').textContent=URO_FORMA_DICA[f];
+  });
+}
+function uroHtmlBloco(){
+  return '<div id="nsBloco"><h4 style="margin-top:16px">Emissões por API desta cirurgia</h4><div id="nsSelo" role="status"></div>'
+    +'<div id="nsLista" role="status"><p class="hint">Carregando...</p></div><div id="nsCancel" role="group"></div></div>';
+}
+function uroHtmlApi(c,hidden){
+  const t=uroTomador(c), prod=uroProd(), falta=uroEndFalta(c);
+  return '<div id="nfPainelApi"'+(hidden?' hidden':'')+'>'+uroHtmlEmitente(prod?'producao':'homologacao')
+    +(prod?'<div class="msg err" id="nsAvisoProd"><b>Esta nota é REAL.</b> Tem valor fiscal e gera ISS para a Uro Laser. Confira os dados antes de emitir. '+esc(uroTxtDesfazer())+'</div>'
+      :'<div class="msg warn" id="nsAvisoHom"><b>Teste em homologação.</b> A nota não tem valor fiscal e não é registrada nesta cirurgia. O número oficial continua sendo o do site da prefeitura.</div>')
+    +'<dl class="kv"><dt>Tomador</dt><dd><b>'+esc(t.nome)+'</b> · '+esc(t.cpfFmt)+(t.origem==='responsavel'?' (quem assina o contrato)':' (paciente)')+'</dd>'
+    +'<dt>Valor</dt><dd>'+brl(c.pago_valor)+' (o do pagamento registrado)</dd>'
+    +'<dt>Endereço</dt><dd>'+(falta.length?'<span class="chip c-wait">Falta '+esc(falta.join(', '))+'</span> Complete no passo Endereço acima e volte aqui.':esc(uroEndTextoDe(c)))+'</dd></dl>'
+    +'<div class="grid3" style="margin-top:10px"><div class="f"><label for="nsComp">Competência</label><input type="date" id="nsComp" value="'+hoje()+'"></div></div>'
+    +'<div class="f" style="margin-top:10px"><label for="nsDesc">Descrição</label><textarea id="nsDesc" rows="3" maxlength="1000">'+esc(descricaoNota(c))+'</textarea></div>'
+    +'<div class="actions"><button class="btn sec" id="bNsConf" type="button"'+(falta.length?' disabled':'')+'>Conferir antes de emitir</button></div>'
+    +'<div id="nsConf" role="status"></div>'+uroHtmlBloco()+'<div id="msg-uro" role="status"></div></div>';
+}
+function uroHtmlConferencia(cf){
+  const p=cf.perfil||{}, tm=cf.tomador||{}, prod=cf.ambiente==='producao';
+  return '<div class="msg '+(prod?'err':'info')+'" style="margin-top:12px"><b>Confira antes de emitir ('+(prod?'PRODUÇÃO: nota fiscal real':'homologação')+')</b>'
+    +'<dl class="kv" style="margin-top:8px"><dt>Emitente (quem emite)</dt><dd>'+uroEmitenteTxt(cf.emitente)+'</dd><dt>Tomador (quem recebe)</dt><dd>'+esc(tm.nome)+' · documento '+esc(tm.documento)+'</dd>'
+    +'<dt>Competência</dt><dd>'+esc(dBR(cf.competencia))+'</dd>'
+    +'<dt>Valor</dt><dd>'+brl((Number(cf.valor_centavos)||0)/100)+'</dd>'
+    +'<dt>Local da prestação</dt><dd>município '+esc(cf.local_prestacao_ibge)+'</dd>'
+    +(Array.isArray(cf.endereco_enviado)?'<dt>Endereço enviado</dt><dd>'+(cf.endereco_enviado.length?esc(cf.endereco_enviado.map(k=>({cep:'CEP',logradouro:'rua',numero:'número',bairro:'bairro'})[k]||k).join(', ')):'nenhum')+'</dd>':'')
+    +'<dt>Descrição</dt><dd>'+esc(cf.descricao)+'</dd>'
+    +'<dt>Perfil fiscal</dt><dd>'+esc(p.id)+' v'+esc(p.versao)+' · nacional '+esc(p.codigo_tributacao_nacional)+' · municipal '+esc(p.codigo_tributacao_municipal)
+    +' · NBS '+esc(p.nbs)+' · ISS '+esc(p.aliquota_iss)+'% '+(p.iss_retido?'retido':'não retido')+'</dd></dl></div>';
+}
+function uroHtmlCancelar(prod,num){
+  return '<div class="msg '+(prod?'err':'warn')+'" style="margin-top:12px"><b>Cancelar a nota '+(prod?'REAL':'de teste')+(num?' nº '+esc(num):'')+'</b>'
+    +'<p style="margin:6px 0 0">O cancelamento é definitivo e não pode ser desfeito. '+(prod?'Esta é uma nota fiscal REAL e a prefeitura pode recusar o cancelamento fora do prazo. ':'')
+    +'O texto abaixo vai para a prefeitura: não escreva nome, CPF, diagnóstico nem procedimento.</p></div>'
+    +'<div class="f" style="margin-top:10px"><label for="nsCancJust">Justificativa (15 a 255 letras)</label><textarea id="nsCancJust" rows="2" maxlength="255" placeholder="Ex.: nota emitida em duplicidade"></textarea></div>'
+    +(prod?'<div class="f" style="margin-top:10px"><label for="nsCancDigite">Para cancelar a nota REAL, digite CANCELAR NOTA REAL</label><input type="text" id="nsCancDigite" autocomplete="off" autocapitalize="characters"></div>':'')
+    +'<div class="actions"><button class="btn danger" id="bNsCancConfirmar" type="button" disabled>Confirmar o cancelamento'+(prod?' (nota real)':'')+'</button>'
+    +'<button class="btn sec" id="bNsCancVoltar" type="button">Voltar</button></div>';
+}
+// Selo de "uma única nota": vem da conta do servidor. Texto do servidor entra sempre por esc().
+function uroHtmlSelo(v,rows){
+  if(!v||typeof v!=='object'||(!v.ativas&&!v.autorizadas))return '';
+  if(v.unica!==true)return '<div class="msg err" id="nsSeloAlerta"><b>ATENÇÃO:</b> há mais de uma emissão ativa ou número repetido nesta cirurgia (ativas '+esc(String(v.ativas))+', autorizadas '+esc(String(v.autorizadas))+'). Não emita nada e avise o suporte.</div>';
+  const aut=(rows||[]).find(x=>x.estado==='autorizada');
+  if(Number(v.autorizadas)===1&&aut)return '<div class="msg ok" id="nsSeloUnica"><b>Nota única conferida:</b> 1 nota autorizada (nº '+esc(aut.numero||'')+') e nenhuma outra emissão ativa.</div>';
+  return '<div class="msg info" id="nsSeloAndamento">1 emissão em andamento; nenhuma outra ativa.</div>';
+}
+function uroHtmlLinha(r,c){
+  const st=uroRot(r), prod=r.ambiente==='producao';
+  let h='<div class="copyrow" style="align-items:flex-start"><span class="val"><span class="chip '+st[0]+'">'+esc(st[1])+'</span> '
+    +(r.numero?'nota '+(prod?'':'de teste ')+'<b>'+esc(r.numero)+'</b>':'')
+    +(r.data_emissao?' · '+esc(dBR(r.data_emissao)):'')+' · competência '+esc(dBR(r.competencia))+' · '+brl((Number(r.valor_centavos)||0)/100);
+  if(r.estado==='rejeitada')h+='<br><span class="hint">Motivo: '+esc((r.erro_codigo?r.erro_codigo+' · ':'')+(r.mensagem_provedor||'sem texto do provedor'))+'</span>';
+  if(r.estado==='resultado_incerto')h+='<br><span class="hint">O servidor não soube dizer se a nota foi criada. Toque em Atualizar; não emita de novo.</span>';
+  h+='</span>';
+  const bt=[];
+  if(r.estado!=='rejeitada'&&r.estado!=='cancelada')bt.push('<button class="btn sec small" type="button" data-nsid="'+esc(r.id)+'">Atualizar</button>');
+  if(r.estado==='autorizada'&&r.pdf_url)bt.push('<button class="btn sec small" type="button" data-nspdf="'+esc(r.id)+'">Baixar PDF</button>');
+  if(r.estado==='autorizada'&&uroPodeCancelar())bt.push('<button class="btn sec small" type="button" data-nscanc="'+esc(r.id)+'" data-nsnum="'+esc(r.numero||'')+'">Cancelar nota</button>');
+  if(bt.length)h+='<span style="display:flex;flex-direction:column;gap:6px;flex:none">'+bt.join('')+'</span>';
+  return h+'</div>';
+}
+
+/* Trava contra nota duplicada: com uma nota REAL por API em andamento ou autorizada nesta cirurgia, o portal fica inerte (botões desligados e aviso).
+   Vale em qualquer aparelho e para a secretaria, porque a lista vem do servidor. Nota cancelada, rejeitada ou de homologação não trava. Se a lista não puder
+   ser lida o portal continua livre, só com um aviso (a cópia é o caminho de reserva). rows = linhas do servidor; null = não pôde ler. */
+const URO_TRAVA_ESTADOS=URO_ABERTOS.concat(['autorizada']);
+function uroTravaAplicar(c,rows){
+  const box=$('nfPainelPortal'); if(!box||!$('modal')||$('modal').dataset.ficha!==c.id)return;
+  const velho=$('nfTravaPortal'); if(velho)velho.remove();
+  const ativas=(rows||[]).filter(r=>r.ambiente==='producao'&&URO_TRAVA_ESTADOS.includes(r.estado)), trava=ativas.length>0;
+  box.inert=trava;
+  box.querySelectorAll('button,input,a').forEach(e=>{if(trava){if(!e.disabled)e.dataset.travaPortal='1';if(e.tagName!=='A')e.disabled=true;}else if(e.dataset.travaPortal==='1'){delete e.dataset.travaPortal;e.disabled=false;}});
+  if(!trava&&rows!==null)return;
+  const a=document.createElement('div'); a.id='nfTravaPortal'; a.setAttribute('role','alert'); a.className='msg '+(trava?'err':'warn');
+  if(trava){
+    const aut=ativas.filter(r=>r.estado==='autorizada'), n=aut.map(r=>r.numero).filter(Boolean).join(' e ');
+    a.textContent=aut.length?'Já existe uma nota por API autorizada nesta cirurgia'+(n?' (nº '+n+')':'')+'. Não emita outra pelo portal. Se ela estiver errada, cancele-a antes.'
+      :'Já existe uma nota por API em andamento nesta cirurgia. Espere o resultado antes de copiar para o portal: emitir pelos dois caminhos gera duas notas.';
+  }else a.textContent='Não consegui conferir se já existe nota por API nesta cirurgia. Antes de emitir pelo portal, confira na lista de emissões (Emitir por API) para não gerar duas notas.';
+  box.prepend(a);
+}
+// Sem painel da API na ficha (ex.: cirurgia sem endereço e sem CPF válido): lê a lista só para a trava, e só com a produção ligada no servidor.
+async function uroTravaSozinha(c){
+  if(!$('nfPainelPortal')||!(NFSE_EST&&NFSE_EST.producao===true)||c.cancelada||c.nota_numero)return;
+  const r=await uroChamar({acao:'listar',atendimento_id:c.id});
+  uroTravaAplicar(c,r.ok&&r.data&&Array.isArray(r.data.emissoes)?r.data.emissoes:null);
+}
+function uroBytes(b64){try{const bin=atob(String(b64||''));const u=new Uint8Array(bin.length);for(let k=0;k<bin.length;k++)u[k]=bin.charCodeAt(k);return u;}catch(e){return null;}}
+const uroEhPdf=u=>!!u&&u.length>4&&u[0]===0x25&&u[1]===0x50&&u[2]===0x44&&u[3]===0x46;
+async function uroSha256(u){const d=await crypto.subtle.digest('SHA-256',u);return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+
+function uroLigar(c){
+  const full=!!$('nfPainelApi'), extra=!!$('nsExtra');
+  if($('nfForma'))uroLigarForma();
+  if(!full&&!extra){uroTravaSozinha(c);return;}
+  const id=c.id, AMB=uroAmb();
+  const ainda=()=>!!$('modal')&&$('modal').dataset.ficha===id&&!!($('nfPainelApi')||$('nsExtra'));
+  const aviso=(k,t)=>uroMsg(k,t);
+  let prep=null; // {hash, escolhas}: vale só para os dados conferidos
+  const invalidar=()=>{prep=null;if($('nsConf'))$('nsConf').innerHTML='';};
+  ['nsComp','nsDesc'].forEach(k=>{const el=$(k);if(el)el.addEventListener('input',invalidar);});
+  const atual=()=>CIR.find(x=>x.id===id)||c;
+  const lerEscolhas=()=>{
+    const cc=atual(), t=uroTomador(cc);
+    const end={logradouro:String(cc.contratante_logradouro||'').trim(),numero:String(cc.contratante_numero||'').trim(),bairro:String(cc.contratante_bairro||'').trim(),
+      cep:digits(cc.contratante_cep),municipio_ibge:String(cc.contratante_municipio_ibge||''),uf:String(cc.contratante_uf||'')};
+    const comp=String(cc.contratante_complemento||'').trim(); if(comp)end.complemento=comp;
+    return {competencia:$('nsComp').value,valor_centavos:uroCentavos(cc),local_prestacao_ibge:URO_GYN,
+      tomador:{origem:t.origem,cpf:t.cpf,nome:t.nome,endereco:end},descricao:$('nsDesc').value.trim()};
+  };
+  let ULT=[]; // as emissões da última leitura
+  async function lista(){
+    const r=await uroChamar({acao:'listar',atendimento_id:id});
+    if(!ainda())return [];
+    const box=$('nsLista'); if(!box)return [];
+    if(!r.ok){box.innerHTML='<p class="hint">Não foi possível ler as emissões ('+esc(uroMsgErro(r.codigo))+').</p>';uroTravaAplicar(atual(),null);return [];}
+    const todas=r.data.emissoes||[]; ULT=todas;
+    uroTravaAplicar(atual(),todas);
+    const rows=todas.filter(x=>x.ambiente===AMB);
+    if(extra&&!rows.length)$('nsExtra').hidden=true; else if(extra)$('nsExtra').hidden=false;
+    const sel=$('nsSelo'); if(sel)sel.innerHTML=uroHtmlSelo((r.data.verificacao||{})[AMB],rows);
+    box.innerHTML=rows.length?rows.map(x=>uroHtmlLinha(x,atual())).join(''):'<p class="hint">'+(AMB==='producao'?'Nenhuma emissão ainda.':'Nenhuma emissão de teste ainda.')+'</p>';
+    box.querySelectorAll('[data-nsid]').forEach(b=>b.onclick=async()=>{b.disabled=true;await atualizar(b.dataset.nsid);});
+    box.querySelectorAll('[data-nscanc]').forEach(b=>b.onclick=()=>abrirCancelar(b.dataset.nscanc,b.dataset.nsnum));
+    box.querySelectorAll('[data-nspdf]').forEach(b=>b.onclick=()=>baixarPdf(b.dataset.nspdf,b));
+    if(AMB==='producao')await autoRegistrar(rows);
+    return rows;
+  }
+  async function atualizar(emissaoId){
+    const r=await uroChamar({acao:'consultar',emissao_id:emissaoId});
+    if(!ainda())return;
+    if(!r.ok)aviso('err',uroMsgErro(r.codigo));
+    await lista();
+  }
+  // Nota REAL autorizada com número: grava o número e a data na cirurgia (o que antes o secretário digitava). A lista do servidor é a verdade;
+  // o número é gravado só se nenhuma outra cirurgia já o tiver. Em homologação nada é gravado.
+  let registrando=false;
+  async function autoRegistrar(rows){
+    const cc=atual();
+    if(registrando||cc.nota_numero||cc.cancelada)return;
+    const aut=rows.filter(x=>x.ambiente==='producao'&&x.estado==='autorizada'&&digits(x.numero));
+    if(aut.length!==1)return; // zero: nada a gravar; mais de um: o selo avisa e ninguém grava
+    const n=digits(aut[0].numero), dup=CIR.find(x=>x.id!==id&&digits(x.nota_numero)===n);
+    if(dup){aviso('err','A nota '+n+' já está registrada para '+dup.paciente_nome+'. Confira o número antes de gravar.');return;}
+    registrando=true;
+    const r=await salvar(id,{nota_numero:n,nota_em:String(aut[0].data_emissao||hoje()).slice(0,10)},'nota_registrada_api',n);
+    registrando=false;
+    if(!ainda())return;
+    if(r){abrirCirurgia(id,'passo-nota');const el=$('mMsg');if(el)msg(el,'ok','Nota '+n+' emitida e registrada nesta cirurgia.');}
+  }
+  async function baixarPdf(emissaoId,btn){
+    const r=ULT.find(x=>x.id===emissaoId); if(!r||r.estado!=='autorizada')return;
+    btn.disabled=true; aviso('info','Buscando o PDF da nota...');
+    const p=await uroChamar({acao:'pdf',emissao_id:emissaoId});
+    if(!ainda())return;
+    btn.disabled=false;
+    const f=p.ok&&p.data&&p.data.pdf, u=f?uroBytes(f.base64):null;
+    if(!u||!uroEhPdf(u)||(await uroSha256(u))!==f.sha256){aviso('err','O PDF da nota não veio'+(p.ok?'':' ('+uroMsgErro(p.codigo||'SERVICO_INDISPONIVEL')+')')+'. Tente de novo em instantes.');return;}
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([u],{type:'application/pdf'})); a.download=uroPdfNome(r).replace(/[^\w.\-]/g,'_'); document.body.appendChild(a); a.click(); a.remove();
+    aviso('ok','PDF da nota baixado.');
+  }
+  // Cancelamento: o pedido só sai com justificativa válida (e a frase, em produção).
+  const FRASE_CANC='CANCELAR NOTA REAL';
+  const cancOk=()=>{
+    const j=$('nsCancJust'); if(!j||String(j.value).trim().length<15)return false;
+    if(AMB!=='producao')return true;
+    const d=$('nsCancDigite'); return !!d&&String(d.value).replace(/\s+/g,' ').trim().toUpperCase()===FRASE_CANC;
+  };
+  let canc=null;
+  const fecharCancelar=()=>{canc=null;const b=$('nsCancel');if(b)b.innerHTML='';};
+  function abrirCancelar(emissaoId,num){
+    const box=$('nsCancel'); if(!box)return;
+    canc={id:emissaoId,num:num||''};
+    box.innerHTML=uroHtmlCancelar(AMB==='producao',num);
+    const sync=()=>{const b=$('bNsCancConfirmar');if(b)b.disabled=!cancOk();};
+    $('nsCancJust').addEventListener('input',sync);
+    if($('nsCancDigite'))$('nsCancDigite').addEventListener('input',sync);
+    $('bNsCancVoltar').onclick=fecharCancelar;
+    $('bNsCancConfirmar').onclick=cancelar;
+    try{box.scrollIntoView({block:'nearest'});}catch(e){}
+    $('nsCancJust').focus();
+  }
+  async function cancelar(){
+    if(!canc||!cancOk())return;
+    const btn=$('bNsCancConfirmar'); if(btn)btn.disabled=true;
+    const alvo=canc, just=$('nsCancJust').value.trim();
+    aviso('info',AMB==='producao'?'Cancelando em PRODUÇÃO...':'Cancelando em homologação...');
+    const r=await uroChamar({acao:'cancelar',emissao_id:alvo.id,ambiente:AMB,justificativa:just});
+    if(!ainda())return;
+    if(!r.ok){
+      if(r.codigo==='JUSTIFICATIVA_INVALIDA'){aviso('err',uroMsgErro(r.codigo));if(btn)btn.disabled=!cancOk();return;}
+      aviso(r.codigo==='SEM_RESPOSTA'?'warn':'err',r.codigo==='SEM_RESPOSTA'
+        ?'O servidor não respondeu. Não sabemos se a nota foi cancelada: toque em Atualizar na linha da nota e confira antes de tentar de novo.':uroMsgErro(r.codigo));
+      fecharCancelar(); await lista(); return;
+    }
+    const e=r.data.emissao||{}, cn=r.data.cancelamento||{}, num=e.numero||alvo.num;
+    if(cn.confirmado===true&&e.estado==='cancelada'){ // só vale a confirmação do servidor (ele consultou a Focus)
+      // desfaz o registro automático: a cirurgia volta a "nota a emitir" e pode receber outra nota
+      const cc=atual(); let msgReg='';
+      if(AMB==='producao'&&digits(cc.nota_numero)===digits(num)&&digits(num)){
+        const s=await salvar(id,{nota_numero:null,nota_em:null},'nota_cancelada_api',digits(num));
+        msgReg=s?' O registro da nota nesta cirurgia foi desfeito.':' Atenção: não consegui desfazer o registro do número nesta cirurgia. Limpe o número da nota manualmente.';
+      }
+      if(!ainda())return;
+      fecharCancelar();
+      if(AMB==='producao'){abrirCirurgia(id,'passo-nota');const el=$('mMsg');if(el)msg(el,msgReg.indexOf('Atenção')>=0?'warn':'ok','Nota nº '+num+' cancelada em PRODUÇÃO. O cancelamento é definitivo.'+msgReg);return;}
+      aviso('ok','Nota de teste nº '+num+' cancelada.'); await lista(); return;
+    }
+    const motivo=cn.mensagem_provedor||cn.erro_codigo;
+    aviso(cn.solicitacao_aceita?'warn':'err','O cancelamento NÃO foi confirmado: a nota continua AUTORIZADA.'+(motivo?' Motivo: '+motivo+'.':'')
+      +(cn.solicitacao_aceita?' O pedido foi aceito, mas a consulta ainda mostra a nota autorizada: toque em Atualizar daqui a instantes.':''));
+    fecharCancelar(); await lista();
+  }
+  let tentativas=0;
+  function acompanhar(rows){
+    clearTimeout(URO.tmr);
+    const abertas=(rows||[]).filter(x=>URO_ABERTOS.includes(x.estado));
+    if(!abertas.length||tentativas>=6||!ainda())return;
+    tentativas++;
+    URO.tmr=setTimeout(async()=>{if(!ainda())return;await uroChamar({acao:'consultar',emissao_id:abertas[0].id});if(!ainda())return;acompanhar(await lista());},4000);
+  }
+  const digitouEmitir=()=>{const e=$('nsDigite');return !!e&&String(e.value).replace(/\s+/g,' ').trim().toUpperCase()==='EMITIR NOTA';};
+  if($('bNsConf'))$('bNsConf').onclick=async function(){
+    this.disabled=true; aviso('info','Conferindo...'); invalidar();
+    const cc=atual(), falta=uroEndFalta(cc);
+    if(falta.length){this.disabled=false;aviso('warn','Falta o endereço de quem recebe a nota: '+falta.join(', ')+'. A prefeitura exige esses dados. Complete no passo Endereço e confira de novo.');return;}
+    const es=lerEscolhas();
+    const r=await uroChamar({acao:'preparar',atendimento_id:id,ambiente:AMB,escolhas:es});
+    this.disabled=false; if(!ainda())return;
+    if(!r.ok){aviso('err',uroMsgErro(r.codigo));return;}
+    const d=r.data;
+    if(d.review_hash&&!uroEmitenteIgual((d.conferencia||{}).emitente)){aviso('err','O servidor respondeu com outro emitente (não é a Uro Laser). Não emita; avise o Dr. Marcel.');return;}
+    if(AMB==='producao'&&(!d.conferencia||d.conferencia.ambiente!=='producao')){aviso('err','O servidor respondeu com outro ambiente. Não emita; confira de novo.');return;}
+    if(!d.review_hash||(d.bloqueios&&d.bloqueios.length)){aviso('warn','Não dá para emitir: '+(d.bloqueios||[]).map(uroMsgErro).join(' '));return;}
+    aviso('ok','Conferido. Leia o resumo e, se estiver certo, confirme.');
+    prep={hash:d.review_hash,escolhas:es};
+    const botao=AMB==='producao'
+      ?'<div class="f" style="margin-top:10px"><label for="nsDigite">Para emitir a nota REAL, digite emitir nota</label><input type="text" id="nsDigite" autocomplete="off" autocapitalize="characters"></div>'
+        +'<div class="actions"><button class="btn danger" id="bNsEmitir" type="button" disabled>Emitir nota em PRODUÇÃO (nota real)</button></div>'
+      :'<div class="actions"><button class="btn" id="bNsEmitir" type="button">Confirmar e emitir em homologação</button></div>';
+    $('nsConf').innerHTML=uroHtmlConferencia(d.conferencia)+botao;
+    $('bNsEmitir').onclick=emitir;
+    if(AMB==='producao')$('nsDigite').addEventListener('input',()=>{$('bNsEmitir').disabled=!digitouEmitir();});
+  };
+  async function emitir(){
+    if(!prep)return;
+    if(AMB==='producao'&&!digitouEmitir())return; // produção: só com a frase digitada
+    const btn=$('bNsEmitir'); if(btn)btn.disabled=true;
+    const chave=id+'|'+prep.hash; let op=URO.op[chave];
+    if(!op){try{op=sessionStorage.getItem('uro_nfse_op_'+chave);}catch(e){} if(!op){op=crypto.randomUUID();try{sessionStorage.setItem('uro_nfse_op_'+chave,op);}catch(e){}} URO.op[chave]=op;}
+    aviso('info',AMB==='producao'?'Emitindo em PRODUÇÃO...':'Emitindo em homologação...');
+    const r=await uroChamar({acao:'emitir',operacao_id:op,atendimento_id:id,ambiente:AMB,escolhas:prep.escolhas,review_hash:prep.hash});
+    if(!ainda())return;
+    if(!r.ok){
+      aviso(r.codigo==='SEM_RESPOSTA'?'warn':'err',r.codigo==='SEM_RESPOSTA'
+        ?'O servidor não respondeu. Não sabemos se a nota foi criada: veja a lista abaixo e toque em Atualizar. Se quiser tentar de novo, confira e confirme outra vez: o mesmo pedido não gera nota duplicada.'
+        :uroMsgErro(r.codigo));
+      if(btn)btn.disabled=false; acompanhar(await lista()); return;
+    }
+    const e=r.data.emissao||{};
+    invalidar();
+    aviso(e.estado==='rejeitada'?'err':(e.estado==='autorizada'?'ok':'info'),
+      e.estado==='autorizada'?(AMB==='producao'?'Autorizada em PRODUÇÃO. Número '+(e.numero||'')+'. Esta é uma nota fiscal real.':'Autorizada em homologação (teste). Número '+(e.numero||'')+'.')
+      :(e.estado==='rejeitada'?(AMB==='producao'?'A prefeitura rejeitou a nota. Veja o motivo abaixo.':'A prefeitura de teste rejeitou a nota. Veja o motivo abaixo.'):'Enviada. Estado: '+((URO_ST[e.estado]||[0,e.estado])[1])+'. A tela atualiza sozinha.'));
+    acompanhar(await lista());
+  }
+  lista().then(acompanhar);
+}
+// Chamada única depois de abrir a ficha: liga endereço, forma de emitir e painel da API (ou só a trava do portal).
+function uroLigarFicha(c){
+  uroLigarEndereco(c);
+  if(!NFSE_EST&&PAPEL&&!URO.tentouEstado){
+    URO.tentouEstado=true;
+    uroCarregarEstado().then(()=>{if(NFSE_EST&&$('modal')&&$('modal').dataset.ficha===c.id&&!$('nfPainelApi'))abrirCirurgia(c.id);});
+  }
+  uroLigar(c);
+}
+uroEndMontar('n','slotEndN',null);
+
+/* ================= Notas para hospital (tomador PJ) por API, SÓ HOMOLOGAÇÃO (11/11/2026) ================= */
+// Aba "Notas hospitais (teste)": adaptada da aba "Notas PJ" testada no app da secretaria da Cognette. SÓ O SÓCIO e SÓ NO MODO DE TESTE
+// (página aberta com ?nfse=hom e servidor com a homologação ligada): a Uro Laser NÃO tem perfil fiscal PJ aprovado para produção
+// (retenções de ISS, IRRF, PIS, COFINS e CSLL dependem do hospital e da contadora), então fora do teste a aba nem aparece e a nota
+// para hospital continua pelo portal. A página manda só o id do hospital, a competência, o valor, a descrição e (só se o hospital
+// tiver mais de um número) o número do endereço; CNPJ, razão social, endereço e perfil fiscal saem do servidor.
+// Cancelar: justificativa de 15 a 255 letras. PDF: pelo servidor, com %PDF e sha256 conferidos.
+// Usa uroChamar, uroMsgErro, NFSE_EST, uroAmb, uroRot, URO_ABERTOS, uroBytes, uroEhPdf e uroSha256 do bloco da NFS-e (vem antes).
+const URO_PJ={hosp:null,limite:0,ult:[],op:{},tmr:null,prep:null};
+const URO_PJ_ERRO={
+  HOSPITAL_NAO_CADASTRADO:'Hospital não cadastrado neste ambiente.',
+  COMPETENCIA_FUTURA:'A competência não pode ser depois de hoje.',
+  VALOR_ACIMA_DO_LIMITE:'Valor acima do limite de segurança das notas para hospital. Confira se não sobrou zero.',
+  DESCRICAO_COM_CPF:'A descrição tem um número que parece CPF. Tire: a nota vai para o hospital.',
+  ENDERECO_NUMERO_OBRIGATORIO:'Escolha o número do endereço do hospital.',
+  ENDERECO_NUMERO_INVALIDO:'O número do endereço não é um dos cadastrados para este hospital.',
+  NOTA_PJ_DUPLICADA:'Já existe nota ativa (em andamento ou autorizada) para este hospital, com a mesma competência e o mesmo valor. Veja a lista abaixo. Se for outra nota de verdade, mude a data ou o valor.',
+  PERFIL_NAO_APROVADO:'O perfil fiscal para hospital não está liberado neste ambiente. Por enquanto só existe em homologação; a nota real vai pelo portal.'
+};
+const uroPjMsg=cod=>URO_PJ_ERRO[cod]||uroMsgErro(cod);
+const uroPjPode=()=>PAPEL==='socio'&&!!(NFSE_EST&&NFSE_EST.pode_pj===true)&&uroAmb()==='homologacao';
+function uroPjAtualizarAba(){const b=$('tabNotasPj');if(b)b.hidden=!uroPjPode();}
+const uroPjReais=c=>(Math.round(Number(c)||0))/100;
+const uroPjSlug=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').split(/[^A-Za-z0-9]+/).filter(Boolean).map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join('');
+const uroPjHospitais=()=>(URO_PJ.hosp&&URO_PJ.hosp.homologacao)||[];
+const uroPjHospital=id=>uroPjHospitais().find(h=>h.id===id)||null;
+function uroPjAviso(k,t){const e=$('msg-npj');if(e)msg(e,k,t);}
+// Valor digitado -> reais. Com vírgula: ponto é milhar (1.234,56). Sem vírgula: ponto só vale como decimal de 1 ou 2 casas (1234.5).
+function uroPjValorDe(txt){
+  let s=String(txt||'').replace(/R\$/gi,'').replace(/\s/g,'');
+  if(!s)return {erro:'Informe o valor da nota.'};
+  if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');
+  else if(/^\d{1,3}(\.\d{3})+$/.test(s))s=s.replace(/\./g,'');
+  if(!/^\d+(\.\d{1,2})?$/.test(s))return {erro:'Valor inválido. Use números, por exemplo 1.510,75.'};
+  const v=Number(s); if(!(v>0))return {erro:'O valor da nota precisa ser maior que zero.'};
+  return {v};
+}
+function uroPjHtml(){
+  if(!uroPjPode())return '<div class="msg warn">Esta aba existe só para o sócio, no modo de teste (página aberta com ?nfse=hom). A nota real para hospital continua pelo portal.</div>';
+  const hs=uroPjHospitais();
+  if(!hs.length)return '<div class="msg warn">Nenhum hospital cadastrado para a homologação.</div>';
+  return '<div class="step" id="passo-npj"><h4>Nota para hospital (PJ) <span class="chip c-wait">TESTE em homologação</span></h4>'
+    +uroHtmlEmitente('homologacao')
+    +'<div class="msg warn" id="npjAvisoHom">Nota de teste: não tem valor fiscal. O hospital desta lista é fictício e só existe na homologação. Para hospital real a nota continua pelo portal até a contadora definir as retenções.</div>'
+    +'<div class="f"><label for="npjHosp">Hospital (tomador, quem recebe a nota)</label><select id="npjHosp">'+hs.map(h=>'<option value="'+esc(h.id)+'">'+esc(h.apelido)+'</option>').join('')+'</select></div>'
+    +'<p class="hint2" id="npjEnd" style="margin:6px 0 0"></p>'
+    +'<div id="npjNumBox" hidden style="margin-top:10px"><div class="msg warn"><b>Confirme o número do endereço.</b> O cadastro tem mais de um número para este hospital: escolha o que vale nesta nota.</div>'
+      +'<div class="seg" role="radiogroup" aria-label="Número do endereço" id="npjNums" style="margin-top:8px"></div></div>'
+    +'<div class="grid3" style="margin-top:10px"><div class="f"><label for="npjComp">Competência</label><input type="date" id="npjComp" value="'+hoje()+'"></div>'
+      +'<div class="f"><label for="npjValor">Valor da nota (R$)</label><input type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" id="npjValor"><span class="hint" id="npjValorDica" aria-live="polite"></span></div></div>'
+    +'<div class="f" style="margin-top:10px"><label for="npjDesc">Descrição do serviço</label><textarea id="npjDesc" rows="3" maxlength="1000" placeholder="Ex.: Equipamento e fibra laser utilizados em cirurgia no mês de novembro de 2026"></textarea>'
+      +'<p class="hint2" style="margin:4px 0 0">Vai para o hospital: sem nome nem CPF de paciente.</p></div>'
+    +'<div class="actions"><button class="btn sec" id="bNpjConf" type="button">Conferir antes de emitir</button></div>'
+    +'<div id="npjConf" role="status"></div></div>'
+    +'<div class="step"><h4>Notas para hospital emitidas <span class="chip c-off">homologação</span></h4><div id="npjLista" role="status"><p class="txt">Carregando...</p></div>'
+    +'<div id="npjCancel" role="group"></div><div id="msg-npj" role="status"></div></div>';
+}
+function uroPjHtmlConferencia(cf,avisos){
+  const h=cf.hospital||{}, r=cf.retencoes||{}, p=cf.perfil||{}, e=h.endereco||{};
+  const linha=(rot,v,neg)=>'<tr><td>'+rot+'</td><td style="text-align:right;white-space:nowrap">'+(neg?'- ':'')+brl(uroPjReais(v))+'</td></tr>';
+  const ret=[['ISS retido pelo hospital',r.iss_centavos],['IRRF',r.irrf_centavos],['PIS + COFINS + CSLL',r.pis_cofins_csll_centavos]].filter(x=>Number(x[1])>0).map(x=>linha(x[0],x[1],true)).join('');
+  return '<div class="msg info" style="margin-top:12px"><b>Confira antes de emitir (homologação, nota de teste)</b>'
+    +'<dl class="kv" style="margin-top:8px"><dt>Emitente (quem emite)</dt><dd>'+uroEmitenteTxt(cf.emitente)+'</dd><dt>Tomador (hospital, quem recebe)</dt><dd>'+esc(h.apelido)+'<br><span class="hint2">'+esc(h.razao_social)+' · CNPJ '+esc(h.cnpj)+'</span></dd>'
+    +'<dt>Endereço</dt><dd>'+esc(e.logradouro)+', '+esc(cf.endereco_numero)+(e.complemento?' · '+esc(e.complemento):'')+' · '+esc(e.bairro)+' · CEP '+esc(e.cep)+' · '+esc(e.uf)+'</dd>'
+    +'<dt>Competência</dt><dd>'+esc(dBR(cf.competencia))+'</dd>'
+    +'<dt>Local da prestação</dt><dd>município '+esc(cf.local_prestacao_ibge)+'</dd>'
+    +'<dt>Descrição</dt><dd>'+esc(cf.descricao)+'</dd>'
+    +'<dt>Perfil fiscal</dt><dd>'+esc(p.id)+' v'+esc(p.versao)+' · nacional '+esc(p.codigo_tributacao_nacional)+' · municipal '+esc(p.codigo_tributacao_municipal)+' · NBS '+esc(p.nbs)+' · ISS '+esc(p.aliquota_iss)+'%'+(p.iss_retido?' retido':' não retido')+'</dd></dl>'
+    +'<table class="npj-ret" style="width:100%;margin-top:10px;border-collapse:collapse" aria-label="Valores e retenções"><tbody>'
+    +linha('<b>Valor da nota</b>',cf.valor_centavos)+ret
+    +linha('Total retido',r.total_centavos,Number(r.total_centavos)>0)
+    +linha('<b>Líquido a receber</b>',r.liquido_centavos)+'</tbody></table>'
+    +'<p class="hint2" style="margin:6px 0 0">Conta feita pelo servidor, a mesma do envio. O perfil de teste não tem retenções e não vale como regra fiscal.</p></div>'
+    +(avisos&&avisos.length?'<div class="msg warn" id="npjAvisoRecente"><b>Atenção:</b> este hospital já tem nota recente com o mesmo valor, em outra competência. Confira na lista abaixo que esta nota não é repetida.</div>':'');
+}
+function uroPjHtmlLinha(r){
+  const st=uroRot(r), h=uroPjHospital(r.hospital);
+  let t='<div class="copyrow" style="align-items:flex-start"><span class="val"><span class="chip '+st[0]+'">'+esc(st[1])+'</span> <b>'+esc(h?h.apelido:(r.hospital||'hospital'))+'</b> '
+    +'<span class="nw">'+esc(r.ambiente)+'</span>'+(r.numero?' · nota de teste <b>'+esc(r.numero)+'</b>':'')
+    +(r.data_emissao?' · emitida em '+esc(dBR(r.data_emissao)):'')+' · competência '+esc(dBR(r.competencia))+' · '+brl(uroPjReais(r.valor_centavos));
+  if(r.estado==='rejeitada')t+='<br><span class="hint2">Motivo: '+esc((r.erro_codigo?r.erro_codigo+' · ':'')+(r.mensagem_provedor||'sem texto do provedor'))+'</span>';
+  if(r.estado==='resultado_incerto')t+='<br><span class="hint2">O servidor não soube dizer se a nota foi criada. Toque em Atualizar; não emita de novo.</span>';
+  t+='</span>';
+  const bt=[];
+  if(r.estado!=='rejeitada'&&r.estado!=='cancelada')bt.push('<button class="btn sec small" type="button" data-npjat="'+esc(r.id)+'">Atualizar</button>');
+  if(r.estado==='autorizada'){
+    bt.push('<button class="btn small" type="button" data-npjpdf="'+esc(r.id)+'">Baixar o PDF</button>');
+    bt.push('<button class="btn sec small" type="button" data-npjcanc="'+esc(r.id)+'" data-npjnum="'+esc(r.numero||'')+'">Cancelar nota</button>');
+  }
+  if(bt.length)t+='<span style="display:flex;flex-direction:column;gap:6px;flex:none">'+bt.join('')+'</span>';
+  return t+'</div>';
+}
+function uroPjHtmlCancelar(num){
+  return '<div class="msg warn" style="margin-top:12px"><b>Cancelar a nota de teste'+(num?' nº '+esc(num):'')+'</b>'
+    +'<p class="txt" style="margin:6px 0 0">O cancelamento é definitivo. O texto abaixo vai para a prefeitura: não escreva nome, CPF, diagnóstico nem procedimento.</p></div>'
+    +'<div class="f" style="margin-top:10px"><label for="npjCancJust">Justificativa (15 a 255 letras)</label><textarea id="npjCancJust" rows="2" maxlength="255" placeholder="Ex.: nota de teste emitida para conferência"></textarea></div>'
+    +'<div class="actions"><button class="btn" id="bNpjCancConfirmar" type="button" disabled>Confirmar o cancelamento</button>'
+    +'<button class="btn sec" id="bNpjCancVoltar" type="button">Voltar</button></div>';
+}
+async function uroDesenharPj(){
+  const box=$('npjBox'); if(!box)return;
+  if(!uroPjPode()){box.innerHTML=uroPjHtml();return;}
+  if(!URO_PJ.hosp){
+    box.innerHTML='<p class="txt">Carregando...</p>';
+    const r=await uroChamar({acao:'hospitais_pj'});
+    if(!r.ok||!r.data||!r.data.hospitais){box.innerHTML='<div class="msg err">Não foi possível carregar os hospitais ('+esc(uroPjMsg(r.codigo||'SERVICO_INDISPONIVEL'))+'). Recarregue a página.</div>';return;}
+    URO_PJ.hosp=r.data.hospitais; URO_PJ.limite=Number(r.data.limite_valor_centavos)||0;
+  }
+  box.innerHTML=uroPjHtml();
+  if(!$('passo-npj'))return;
+  uroLigarPj();
+}
+function uroLigarPj(){
+  clearTimeout(URO_PJ.tmr); URO_PJ.prep=null;
+  const AMB='homologacao';
+  const ainda=()=>!!$('passo-npj')&&uroPjPode();
+  const aviso=uroPjAviso;
+  const invalidar=()=>{URO_PJ.prep=null;if($('npjConf'))$('npjConf').innerHTML='';};
+  const hospAtual=()=>uroPjHospital($('npjHosp').value);
+  function desenharHospital(){
+    const h=hospAtual(), e=h&&h.endereco; if(!h)return;
+    $('npjEnd').textContent=h.razao_social+' · CNPJ '+h.cnpj+' · '+e.logradouro+(h.escolher_numero?'':', '+h.numeros[0])+(e.complemento?' · '+e.complemento:'')+' · '+e.bairro+' · CEP '+e.cep;
+    $('npjNumBox').hidden=!h.escolher_numero;
+    $('npjNums').innerHTML=h.escolher_numero?h.numeros.map(n=>'<label><input type="radio" name="npjNum" value="'+esc(n)+'"> '+esc(n)+'</label>').join(''):'';
+    $('npjNums').querySelectorAll('input').forEach(x=>x.addEventListener('change',invalidar));
+  }
+  $('npjHosp').addEventListener('change',()=>{invalidar();desenharHospital();});
+  ['npjComp','npjDesc'].forEach(k=>$(k).addEventListener('input',invalidar));
+  $('npjValor').addEventListener('input',()=>{
+    invalidar();
+    const d=$('npjValorDica'), t=$('npjValor').value.trim();
+    if(!t){d.textContent='';return;}
+    const v=uroPjValorDe(t); d.textContent=v.erro?'':'Vai como '+brl(v.v);
+  });
+  desenharHospital();
+  const lerEscolhas=()=>{
+    const h=hospAtual(); if(!h)return {erro:'Escolha o hospital.'};
+    const comp=$('npjComp').value; if(!/^\d{4}-\d{2}-\d{2}$/.test(comp))return {erro:'Informe a competência.'};
+    const v=uroPjValorDe($('npjValor').value); if(v.erro)return {erro:v.erro};
+    const cents=Math.round(v.v*100);
+    if(URO_PJ.limite&&cents>URO_PJ.limite)return {erro:'Valor acima do limite de segurança de '+brl(URO_PJ.limite/100)+'. Confira se não sobrou zero.'};
+    const desc=$('npjDesc').value.trim(); if(!desc)return {erro:'Escreva a descrição do serviço.'};
+    const e={hospital:h.id,competencia:comp,valor_centavos:cents,descricao:desc};
+    if(h.escolher_numero){
+      const n=document.querySelector('input[name="npjNum"]:checked');
+      if(!n)return {erro:'Escolha o número do endereço do hospital ('+h.numeros.join(' ou ')+').'};
+      e.endereco_numero=n.value;
+    }
+    return {e};
+  };
+  async function lista(){
+    const r=await uroChamar({acao:'listar_pj'});
+    if(!ainda())return [];
+    const box=$('npjLista'); if(!box)return [];
+    if(!r.ok){box.innerHTML='<p class="txt">Não foi possível ler as notas ('+esc(uroPjMsg(r.codigo))+').</p>';return [];}
+    const rows=(r.data.emissoes||[]).filter(x=>x.ambiente===AMB); URO_PJ.ult=rows;
+    box.innerHTML=rows.length?rows.map(uroPjHtmlLinha).join(''):'<p class="txt">Nenhuma nota de teste para hospital ainda.</p>';
+    box.querySelectorAll('[data-npjat]').forEach(b=>b.onclick=async()=>{b.disabled=true;await atualizar(b.dataset.npjat);});
+    box.querySelectorAll('[data-npjpdf]').forEach(b=>b.onclick=()=>baixar(b.dataset.npjpdf,b));
+    box.querySelectorAll('[data-npjcanc]').forEach(b=>b.onclick=()=>abrirCancelar(b.dataset.npjcanc,b.dataset.npjnum));
+    return rows;
+  }
+  async function atualizar(id){
+    const r=await uroChamar({acao:'consultar',emissao_id:id});
+    if(!ainda())return;
+    if(!r.ok)aviso('err',uroPjMsg(r.codigo));
+    await lista();
+  }
+  async function baixar(id,btn){
+    const r=URO_PJ.ult.find(x=>x.id===id); if(!r||r.estado!=='autorizada')return;
+    btn.disabled=true; aviso('info','Buscando o PDF da nota...');
+    const p=await uroChamar({acao:'pdf',emissao_id:id});
+    if(!ainda())return;
+    btn.disabled=false;
+    const f=p.ok&&p.data&&p.data.pdf, u=f?uroBytes(f.base64):null;
+    if(!u||!uroEhPdf(u)||(await uroSha256(u))!==f.sha256){aviso('err','O PDF da nota não veio'+(p.ok?'':' ('+uroPjMsg(p.codigo||'SERVICO_INDISPONIVEL')+')')+'. Toque em Baixar o PDF de novo em instantes.');return;}
+    const h=uroPjHospital(r.hospital)||{apelido:r.hospital||'Hospital'};
+    const nome=uroPdfNome(r,uroPjSlug(h.apelido)).replace(/[^\w.\-]/g,'_'); // TESTE_NFSe_UroLaser_<numero>_<Hospital>_<data>.pdf
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([u],{type:'application/pdf'})); a.download=nome; document.body.appendChild(a); a.click(); a.remove();
+    aviso('ok','PDF da nota '+(r.numero||'')+' baixado: '+nome+'.');
+  }
+  const cancOk=()=>{const j=$('npjCancJust');return !!j&&String(j.value).trim().length>=15;};
+  let canc=null;
+  const fecharCancelar=()=>{canc=null;const b=$('npjCancel');if(b)b.innerHTML='';};
+  function abrirCancelar(id,num){
+    const box=$('npjCancel'); if(!box)return;
+    canc={id,num:num||''};
+    box.innerHTML=uroPjHtmlCancelar(num);
+    $('npjCancJust').addEventListener('input',()=>{const b=$('bNpjCancConfirmar');if(b)b.disabled=!cancOk();});
+    $('bNpjCancVoltar').onclick=fecharCancelar;
+    $('bNpjCancConfirmar').onclick=cancelar;
+    try{box.scrollIntoView({block:'nearest'});}catch(e){}
+    $('npjCancJust').focus();
+  }
+  async function cancelar(){
+    if(!canc||!cancOk())return;
+    const btn=$('bNpjCancConfirmar'); if(btn)btn.disabled=true;
+    const alvo=canc, just=$('npjCancJust').value.trim();
+    aviso('info','Cancelando em homologação...');
+    const r=await uroChamar({acao:'cancelar',emissao_id:alvo.id,ambiente:AMB,justificativa:just});
+    if(!ainda())return;
+    if(!r.ok){
+      if(r.codigo==='JUSTIFICATIVA_INVALIDA'){aviso('err',uroPjMsg(r.codigo));if(btn)btn.disabled=!cancOk();return;}
+      aviso(r.codigo==='SEM_RESPOSTA'?'warn':'err',r.codigo==='SEM_RESPOSTA'
+        ?'O servidor não respondeu. Não sabemos se a nota foi cancelada: toque em Atualizar na linha da nota e confira antes de tentar de novo.'
+        :uroPjMsg(r.codigo));
+      fecharCancelar(); await lista(); return;
+    }
+    const e=r.data.emissao||{}, c=r.data.cancelamento||{}, num=e.numero||alvo.num;
+    if(c.confirmado===true&&e.estado==='cancelada'){
+      aviso('ok','Nota de teste nº '+num+' cancelada.');
+    }else{
+      const motivo=c.mensagem_provedor||c.erro_codigo;
+      aviso(c.solicitacao_aceita?'warn':'err','O cancelamento NÃO foi confirmado: a nota continua AUTORIZADA.'+(motivo?' Motivo: '+motivo+'.':'')
+        +(c.solicitacao_aceita?' O pedido foi aceito, mas a consulta ainda mostra a nota autorizada: toque em Atualizar daqui a instantes.':''));
+    }
+    fecharCancelar(); await lista();
+  }
+  let tentativas=0;
+  function acompanhar(rows){
+    clearTimeout(URO_PJ.tmr);
+    const abertas=(rows||[]).filter(x=>URO_ABERTOS.includes(x.estado));
+    if(!abertas.length||tentativas>=6||!ainda())return;
+    tentativas++;
+    URO_PJ.tmr=setTimeout(async()=>{if(!ainda())return;await uroChamar({acao:'consultar',emissao_id:abertas[0].id});if(!ainda())return;acompanhar(await lista());},4000);
+  }
+  $('bNpjConf').onclick=async function(){
+    this.disabled=true; aviso('info','Conferindo...'); invalidar();
+    const le=lerEscolhas();
+    if(le.erro){this.disabled=false;aviso('warn',le.erro);return;}
+    const r=await uroChamar({acao:'preparar_pj',ambiente:AMB,escolhas:le.e});
+    this.disabled=false; if(!ainda())return;
+    if(!r.ok){aviso('err',uroPjMsg(r.codigo));return;}
+    const d=r.data;
+    if(d.review_hash&&!uroEmitenteIgual((d.conferencia||{}).emitente)){aviso('err','O servidor respondeu com outro emitente (não é a Uro Laser). Não emita; avise o Dr. Marcel.');return;}
+    if(!d.review_hash||!d.conferencia||(d.bloqueios&&d.bloqueios.length)){aviso('warn','Não dá para emitir: '+((d.bloqueios&&d.bloqueios.length)?d.bloqueios.map(uroPjMsg).join(' '):'o servidor não liberou a conferência.'));return;}
+    if(d.conferencia.ambiente!==AMB){aviso('err','O servidor respondeu com outro ambiente. Não emita; confira de novo.');return;}
+    aviso('ok','Conferido. Leia o resumo e, se estiver certo, confirme.');
+    URO_PJ.prep={hash:d.review_hash,escolhas:le.e};
+    $('npjConf').innerHTML=uroPjHtmlConferencia(d.conferencia,d.avisos)+'<div class="actions"><button class="btn" id="bNpjEmitir" type="button">Confirmar e emitir em homologação</button></div>';
+    $('bNpjEmitir').onclick=emitir;
+  };
+  async function emitir(){
+    const prep=URO_PJ.prep; if(!prep)return;
+    const btn=$('bNpjEmitir'); if(btn)btn.disabled=true;
+    const chave='pj|'+AMB+'|'+prep.hash; let op=URO_PJ.op[chave];
+    if(!op){try{op=sessionStorage.getItem('uro_nfsepj_op_'+chave);}catch(e){} if(!op){op=crypto.randomUUID();try{sessionStorage.setItem('uro_nfsepj_op_'+chave,op);}catch(e){}} URO_PJ.op[chave]=op;}
+    aviso('info','Emitindo em homologação...');
+    const r=await uroChamar({acao:'emitir_pj',operacao_id:op,ambiente:AMB,escolhas:prep.escolhas,review_hash:prep.hash});
+    if(!ainda())return;
+    if(!r.ok){
+      aviso(r.codigo==='SEM_RESPOSTA'?'warn':'err',r.codigo==='SEM_RESPOSTA'
+        ?'O servidor não respondeu. Não sabemos se a nota foi criada: veja a lista abaixo e toque em Atualizar. Se quiser tentar de novo, confira e confirme outra vez: o mesmo pedido não gera nota duplicada.'
+        :uroPjMsg(r.codigo));
+      if(btn)btn.disabled=false; acompanhar(await lista()); return;
+    }
+    const e=r.data.emissao||{};
+    invalidar();
+    aviso(e.estado==='rejeitada'?'err':(e.estado==='autorizada'?'ok':'info'),
+      e.estado==='autorizada'?'Autorizada em homologação (teste). Número '+(e.numero||'')+'.'
+      :(e.estado==='rejeitada'?'A prefeitura de teste rejeitou a nota. Veja o motivo abaixo.':'Enviada. Estado: '+((URO_ST[e.estado]||[0,e.estado])[1])+'. A tela atualiza sozinha.'));
+    acompanhar(await lista());
+  }
+  lista().then(acompanhar);
+}
 
 /* ---------------- login ---------------- */
 let signupMode=false;
@@ -346,7 +1124,7 @@ async function entrar(){
   PAPEL=p; $('login').style.display='none';
   $('who').textContent=USER_EMAIL+(PAPEL==='socio'?' · sócio':' · secretaria');
   $('toPortal').hidden=PAPEL!=='socio'; $('tabRelat').hidden=PAPEL!=='socio';
-  await carregarPrecos(); await carregarCirurgias(); prepararNova();
+  await carregarPrecos(); await carregarCirurgias(); prepararNova(); uroCarregarEstado();
 }
 (async()=>{
   try{const le=localStorage.getItem('uro_email');if(le)$('email').value=le;}catch(e){}
@@ -358,7 +1136,7 @@ async function entrar(){
 /* ---------------- abas ---------------- */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>abrirAba(b.dataset.tab));
 function abrirAba(t){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
-  ['lista','nova','precos','relat'].forEach(x=>$('tab-'+x).hidden=x!==t); if(t==='relat')relatorio();}
+  ['lista','nova','precos','relat','notaspj'].forEach(x=>$('tab-'+x).hidden=x!==t); if(t==='relat')relatorio(); if(t==='notaspj')uroDesenharPj();}
 
 /* ---------------- preços ---------------- */
 async function carregarPrecos(){
@@ -455,11 +1233,12 @@ $('fNova').addEventListener('submit',async e=>{
   if(!$('dcir').value)return msg(m,'err','Informe a data da cirurgia.');
   if(!$('hosp').value.trim())return msg(m,'err','Informe o hospital.');
   if(!$('med').value.trim())return msg(m,'err','Informe o médico que vai operar.');
+  const endN=uroEndLer('n'); if(endN.erro)return msg(m,'err',endN.erro);
   if(querContrato){
     const falta=[];
     if(cwhats.length<10||cwhats.length>11)falta.push('WhatsApp do contratante');
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))falta.push('e-mail do contratante');
-    if(!$('cend').value.trim())falta.push('endereço do contratante');
+    if(!endN.texto)falta.push('endereço do contratante');
     if(!$('nasc').value)falta.push('nascimento do paciente');
     if(!$('hora').value)falta.push('horário');
     if(!$('crm').value.trim())falta.push('CRM do médico');
@@ -478,7 +1257,7 @@ $('fNova').addEventListener('submit',async e=>{
   const row={paciente_nome:nome.toUpperCase(),paciente_cpf:fmtCPF(cpf),paciente_whats:whats?fmtFone(whats):null,paciente_email:ehPac?(email||null):null,
     paciente_nascimento:$('nasc').value||null,
     contratante_qualidade:$('qual').value,contratante_nome:cnome.toUpperCase(),contratante_cpf:fmtCPF(ccpf),contratante_whats:cwhats?fmtFone(cwhats):null,
-    contratante_email:email||null,contratante_endereco:$('cend').value.trim()||null,
+    contratante_email:email||null,...endN.campos,
     data_cirurgia:$('dcir').value,horario:$('hora').value||null,hospital:$('hosp').value.trim(),medico:$('med').value.trim(),medico_crm:$('crm').value.trim()||null,
     instrumentadora_nome:$('inome').value.trim()||null,instrumentadora_honorarios:n($('ihon').value),
     preco_id:p.id,cirurgiao_socio:p.id==='100_HLS',forma_pagamento:tres?'3x':'vista',pag_forma_contrato:$('forma').value,parcelas:parc,taxas_cartao:tx,
@@ -501,7 +1280,7 @@ $('fNova').addEventListener('submit',async e=>{
     else{const r=await enviarContrato(data.id); avisos.push(r.ok?['ok','Contrato enviado para o WhatsApp do contratante.']:['err','Cirurgia salva, mas o contrato não foi enviado: '+r.erro]);}
   }
   $('btnSalvar').disabled=false; delete $('btnSalvar').dataset.ok;
-  $('fNova').reset(); delete $('naV').dataset.touched; $('naD').value=hoje(); $('agContrato').checked=true; $('wrapContr').hidden=true; fillProc(); rotuloSalvar(); msg(m,'','');
+  $('fNova').reset(); uroEndMontar('n','slotEndN',null); delete $('naV').dataset.touched; $('naD').value=hoje(); $('agContrato').checked=true; $('wrapContr').hidden=true; fillProc(); rotuloSalvar(); msg(m,'','');
   await carregarCirurgias(); abrirAba('lista'); abrirCirurgia(data.id, querPago?'passo-nota':null);
   avisos.forEach(([k,t])=>{const el=document.createElement('div');el.className='msg '+k;el.textContent=t;$('mMsg').appendChild(el);});
 });
@@ -593,7 +1372,7 @@ $('rCsv').addEventListener('click',()=>{
 
 /* ---------------- detalhe ---------------- */
 function abrirModal(h){$('modal').innerHTML=h;$('ovl').hidden=false;}
-function fecharModal(){$('ovl').hidden=true;$('modal').innerHTML='';}
+function fecharModal(){$('ovl').hidden=true;$('modal').innerHTML='';delete $('modal').dataset.ficha;clearTimeout(URO.tmr);}
 $('ovl').addEventListener('click',e=>{if(e.target.id==='ovl')fecharModal();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('ovl').hidden)fecharModal();});
 async function salvar(id,campos,acao,det){
@@ -612,6 +1391,7 @@ function abrirCirurgia(id,foco){
   const ctxt={pendente:'Ainda não enviado',enviado:'Enviado pelo WhatsApp, aguardando assinatura',assinado:'Assinado pelo paciente',recusado:'O paciente recusou a assinatura',cancelado:'Cancelado na ZapSign'}[c.contrato_status];
   let h='<div class="mhead"><div><h3>'+esc(c.paciente_nome)+'</h3><div class="s">'+esc(p.procedimento||'')+' · Laser '+esc(p.laser||'')+' · '+dBR(c.data_cirurgia)+'</div></div><button class="btn ghost small" onclick="fecharModal()">Fechar</button></div><div class="mbody"><div id="mMsg"></div>';
   h+='<div class="step"><h4>Dados</h4><dl class="kv"><dt>CPF</dt><dd>'+esc(c.paciente_cpf)+'</dd>'+(c.paciente_whats?'<dt>WhatsApp</dt><dd>'+esc(c.paciente_whats)+'</dd>':'')+(c.contratante_nome&&c.contratante_qualidade!=='Paciente'?'<dt>Contratante</dt><dd>'+esc(c.contratante_nome)+' ('+esc(c.contratante_qualidade)+')</dd>':'')+((c.contratante_email||c.paciente_email)?'<dt>E-mail</dt><dd>'+esc(c.contratante_email||c.paciente_email)+'</dd>':'')+'<dt>Hospital</dt><dd>'+esc(c.hospital)+'</dd><dt>Médico</dt><dd>'+esc(c.medico)+(c.cirurgiao_socio?' (sócio)':'')+'</dd><dt>Valor</dt><dd>'+brl(c.valor)+(Number(c.transporte)?' + transporte '+brl(c.transporte):'')+(Number(c.taxas_cartao)?' + taxas '+brl(c.taxas_cartao):'')+' · '+esc(c.pag_forma_contrato||(c.forma_pagamento==='3x'?'3x no cartão':'à vista'))+(c.parcelas>1?' em '+c.parcelas+'x':'')+'</dd>'+(c.instrumentadora_nome?'<dt>Instrumentadora</dt><dd>'+esc(c.instrumentadora_nome)+(c.instrumentadora_honorarios!=null?' · '+brl(c.instrumentadora_honorarios):'')+'</dd>':'')+(c.observacao?'<dt>Observação</dt><dd>'+esc(c.observacao)+'</dd>':'')+'</dl></div>';
+  h+=uroPassoEndereco(c);
   // contrato
   h+='<div class="step"><h4>Contrato <span class="chip '+({assinado:'c-ok',enviado:'c-info',recusado:'c-bad'}[c.contrato_status]||'c-wait')+'">'+esc(ctxt)+'</span></h4>';
   if(c.cancelada){h+='<p class="hint">Cirurgia cancelada.</p>';}
@@ -631,8 +1411,10 @@ function abrirCirurgia(id,foco){
   const tomCPF=c.contratante_cpf||c.paciente_cpf, tomNome=c.contratante_nome||c.paciente_nome;
   const desc=descricaoNota(c), valNota=Number(c.pago_valor||total).toFixed(2).replace('.',',');
   h+='<div class="step" id="passo-nota"><h4>Nota fiscal <span class="chip '+(c.nota_numero?'c-ok':(c.pago?'c-wait':'c-off'))+'">'+(c.nota_numero?'Nota '+esc(c.nota_numero):(c.pago?'A emitir':'Depois do pagamento'))+'</span></h4>';
-  if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>';}
+  if(c.nota_numero){h+='<dl class="kv"><dt>Número</dt><dd>'+esc(c.nota_numero)+'</dd><dt>Emitida em</dt><dd>'+dBR(c.nota_em)+'</dd></dl>'+(uroAmb()&&c.pago?'<div id="nsExtra" hidden>'+uroHtmlBloco()+'<div id="msg-uro" role="status"></div></div>':'');}
   else if(c.pago&&!c.cancelada){
+    const forma=uroForma(c);
+    h+=uroHtmlForma(c,forma)+(uroDisponivel(c)?uroHtmlApi(c,forma!=='api'):'')+'<div id="nfPainelPortal"'+(forma==='portal'?'':' hidden')+'>';
     h+='<div class="nfauto"><b>Preenchimento automático</b><ol>'
       +'<li>Abra o site da nota, entre com o login, escolha <b>Uro Laser</b>, clique em <b>Menu</b> e depois em <b>Emitir NFS-e</b>. Espere o formulário aparecer.</li>'
       +'<li>Volte aqui e clique em <b>Copiar comando de preenchimento</b>.</li>'
@@ -645,6 +1427,7 @@ function abrirCirurgia(id,foco){
       +'<div class="copyrow"><span class="lab">Valor</span><span class="val">'+esc(valNota)+'</span><button class="btn sec small" data-copy="'+esc(valNota)+'">Copiar</button></div>'
       +'<div class="copyrow"><span class="lab">Descrição</span><span class="val">'+esc(desc)+'</span><button class="btn sec small" data-copy="'+esc(desc)+'">Copiar</button></div>'
       +'<div class="grid2" style="margin-top:12px"><div class="f"><label for="nfN">Número da nota emitida</label><input type="text" id="nfN" inputmode="numeric"></div><div class="f"><label for="nfD">Data de emissão</label><input type="date" id="nfD" value="'+hoje()+'"></div></div><div class="actions"><button class="btn" id="bNota">Registrar nota</button></div>';
+    h+='</div>';
   }
   h+='</div>';
   // checklist
@@ -654,7 +1437,7 @@ function abrirCirurgia(id,foco){
     +'<label><input type="checkbox" id="k3" '+(c.chk_fibra?'checked':'')+'> Fibra conferida (usos restantes)</label></div></div>';
   if(!c.cancelada)h+='<div class="step"><div class="actions"><button class="btn danger small" id="bCanc">Cancelar esta cirurgia</button></div></div>';
   h+='</div>';
-  abrirModal(h);
+  abrirModal(h); $('modal').dataset.ficha=c.id; uroLigarFicha(c);
   if(foco&&$(foco))setTimeout(()=>$(foco).scrollIntoView({block:'start'}),50);
   const M=$('modal');
   M.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copiar(b.dataset.copy,b));
